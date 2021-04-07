@@ -1,0 +1,124 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script searches for \"ssh-agent -s\" processes and kills them.
+  (Will only execute if there is more than 10 found processes for the current user)
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+$HELP_TXT_EXAMPLES
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+# display
+
+f_display () {
+LINES=`ps -ef |grep 'ssh-agent -s' |grep -v grep |column -t |grep ^$GREPID |wc -l |column -t`
+f_msg "`date` Total 'ssh-agent -s' processes: $LINES"
+if [[ $DEBUG == true ]] ;then
+  f_msg -d "'ssh-agent' processes:"
+  f_run "ps -ef |grep 'ssh-agent -s' |grep -v grep |column -t |grep ^$GREPID"
+fi
+}
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    "")  break  ;;
+    *)   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+
+if [[ $OS == linux ]] ;then
+  GREPID=`whoami`
+elif [[ $OS == mac ]] ;then
+  GREPID=`id -u`
+else
+  f_msg -e "Unkown OS: $OS"
+fi
+f_msg -d "GREPID=$GREPID"
+
+#---------------------------------------
+# error checks
+
+#f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# display before
+
+f_display
+
+#---------------------------------------
+# kill ssh-agents
+
+if [[ $LINES -lt 11 ]] ;then
+  f_msg -w "Not enough ssh-agent processes to kill. Skipping attempt ..."
+else
+  f_msg "Creating ssh-agent pid list ..."
+  for PID in `ps -ef |grep 'ssh-agent -s' |grep -v grep |column -t |grep ^$GREPID |head |awk '{print $2}'` ;do
+    f_msg "killing $PID ..."
+    f_run "kill -3 $PID"
+    sleep .1
+  done
+fi
+
+#---------------------------------------
+# display after
+
+f_display
+
+#===============================================================================
+# cleanup
+
+f_logro  # rotate log
+f_exit

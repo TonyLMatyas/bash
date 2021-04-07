@@ -1,0 +1,544 @@
+# variables
+#===============================================================================
+
+# common values
+#---------------------------------------
+
+# filename of script
+#   example: foo.sh
+PROG=`basename $0`
+
+# extension of script
+#   example: sh
+PROGEXT=`echo $PROG |awk -F'.' '{print $NF}'`
+
+# filename of script (without extension)
+#   example: foo
+PROGNAME=`basename $PROG '.'$PROGEXT`
+
+# common temp file
+#   example: /tmp/foo.tmp
+TMP=/tmp/$PROGNAME.tmp
+
+# library file (for sourcing)
+#   example: /etc/foo.lib
+LIB=/etc/$PROGNAME.lib
+
+# default log file
+#   example: /var/log/foo.log
+LOG=/var/log/$PROGNAME.log
+
+# logrotate file
+#   example: /etc/logrotate.d/foo
+LOGROCONF=/etc/logrotate.d/$PROGNAME
+
+# help text presets
+#---------------------------------------
+
+# help text: options
+HELP_TXT_OPTIONS="OPTIONS:
+  -h, --help         display this help text and exit
+  -y, --yes          do not prompt before execution
+  -l, --log          enable logging to a file
+  -le, --log-exec    enable logging to a file (includes executed lines)
+  -v, --verbose      be verbose
+  -vv, --debug       turn on debugging (very verbose)
+  -dr, --dryrun      do a dry run"
+
+# help text: examples
+HELP_TXT_EXAMPLES="EXAMPLES:
+  Normal operation:  # $PROG
+  Dry run:           # $PROG -vv -dr
+  Logging:           # $PROG -v --log"
+
+# help text: notes
+HELP_TXT_NOTES="NOTES:
+  don't combine options:
+    correct:         # $PROG -l -vv
+    incorrect:       # $PROG -lvv"
+
+# time
+#---------------------------------------
+
+# seconds since 1970-01-01 00:00:00 UTC
+DATESS=`date +%s`
+
+# year: 2001
+DATEYEAR=`date +%Y`
+
+# month: 12
+DATEMONTHNUM=`date +%m`
+
+# month: Dec
+DATEMONTHNAME=`date +%b`
+
+# day: 31
+DATEDAY=`date +%d`
+
+# hour: 23
+DATEHOUR=`date +%H`
+
+# minute: 59
+DATEMINUTE=`date +%M`
+
+# second: 59
+DATESECOND=`date +%S`
+
+# year, month, and day: 2001Dec31
+DATEYMD=$DATEYEAR$DATEMONTHNAME$DATEDAY
+
+# year, month, day, hour (24), minute, second: 2001-12-31-23-59-59
+DATEYMDHMS=$DATEYEAR-$DATEMONTHNUM-$DATEDAY-$DATEHOUR-$DATEMINUTE-$DATESECOND
+
+# initial values
+#---------------------------------------
+EXIT_CODE=0
+VERBOSE=false
+LOGGING=false
+LOGEXEC=false
+DEBUG=false
+DRYRUN=false
+SKIP=false
+RAN=false
+DELAY=3
+
+# functions
+#===============================================================================
+
+# exit
+#---------------------------------------
+f_exit () { f_msg -p "Exiting $PROG" ;exit $EXIT_CODE ; }
+
+# usage
+#---------------------------------------
+f_usage () {
+  printf "$HELP_TXT"
+  EXIT_CODE=$1
+  if [[ $EXIT_CODE > 0 ]] ;then
+    echo !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! error !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    echo $MSG ;echo
+  fi
+  f_exit
+}
+
+# print message
+#---------------------------------------
+f_prmsg () {
+  if [ "$FLAGP" = true ] ;then
+    WAIT='0.1'
+    echo -n "$MSG"
+    echo -n . ;sleep $WAIT
+    echo -n . ;sleep $WAIT
+    echo . ;sleep $WAIT
+  else
+    echo "$MSG"
+  fi
+}
+
+# message
+#---------------------------------------
+f_msg () {
+
+# reset flags
+  FLAGW=false ;FLAGE=false ;FLAGL=false ;FLAGD=false ;FLAGP=false
+
+  # process flags
+  while (( "$#" > 0  )) ;do
+    case $1 in
+      -w|--warn)      FLAGW=true ;shift  ;;
+      -e|--error)     FLAGE=true ;shift  ;;
+      -l|--log)       FLAGL=true ;shift  ;;
+      -d|--debug)     FLAGD=true ;shift  ;;
+      -p|--progress)  FLAGP=true ;shift  ;;
+      ""|*)           break              ;;
+    esac
+  done
+
+  # prepend message
+  if [ "$FLAGE" = true ] ;then
+    MSG="ERROR: $1"
+  elif [ "$FLAGW" = true ] ;then
+    MSG="WARN:  $1"
+  elif [ "$FLAGD" = true ] ;then
+    MSG="DEBUG: $1"
+  else
+    MSG="INFO:  $1"
+  fi
+
+  # print message or not
+  if [ "$FLAGE" = false ] ;then                          # if this isn't an error message, continue...
+    if [ "$FLAGD" = true ] && [ "$DEBUG" = true ] ;then  #   if this is a debug message & debug is enabled...
+      f_prmsg                                            #     print DEBUG message
+    elif [ "$VERBOSE" = true ] ;then                     #   if verbose is enabled...
+      if [ "$FLAGW" = true ] ;then                       #     and this is a warning message...
+        f_prmsg                                          #       print WARNING message
+      elif [ "$FLAGD" = false ] ;then                    #     and this isn't a debug message
+        f_prmsg                                          #       print VERBOSE message
+      fi                                                 #
+    fi                                                   #
+  fi                                                     # skip printing errors until after the help text is displayed
+
+  # extra processing
+  if [ "$FLAGL" = true ] && [ "$LOGGING" = true ] && [ "$DRYRUN" = false ] ;then
+    echo "`date` $MSG" >> $LOG  # log the message
+  fi
+  if [ "$FLAGE" = true ] ;then
+    f_usage 3  # display help and exit
+  fi
+}
+
+# run or print
+#---------------------------------------
+f_run () {
+  # reset flags
+  FLAGN=false
+
+  # process flags
+  while (( "$#" > 0  )) ;do
+    case $1 in
+      -n|--no-print)  FLAGN=true ;shift  ;;
+      ""|*)  break  ;;
+    esac
+  done
+
+  # print command or not
+  if [ "$FLAGN" = true ] ;then
+    :
+  elif [ "$DEBUG" = true ] || [ "$DRYRUN" = true ] || [ "$VERBOSE" = true ] ;then
+    # log command or not
+    if [ "$LOGEXEC" = true ] ;then
+      f_msg -d -l "EXECUTE: $1"  # print & log command
+    else
+      f_msg -d "EXECUTE: $1"  # print command
+    fi
+  fi
+
+  # run command or not
+  if [ "$DRYRUN" = false ] ;then
+    eval "$1"                       # run/execute command
+  fi
+}
+
+# process common options
+#---------------------------------------
+f_process_options () {
+  while (( "$#" > 0 )) ;do
+    case $1 in
+      -h|--help)       f_usage 0  ;;
+      -y|--assumeyes)  SKIP=true ;shift  ;;
+      -v|--verbose)    VERBOSE=true ;shift  ;;
+      -l|--log)        LOGGING=true ;shift  ;;
+      -le|--log-exec)  LOGGING=true ;LOGEXEC=true ;shift  ;;
+      -vv|--debug)     VERBOSE=true ;DEBUG=true ;shift  ;;
+      -dr|--dryrun)    VERBOSE=true ;DRYRUN=true ;shift  ;;
+      *)               break  ;;
+    esac
+  done
+  REMAINARGS=$@
+}
+
+# display arguments
+#---------------------------------------
+f_arguments () {
+  f_msg -l -d "SCRIPT START"
+  f_msg -d "PROG=$PROG"
+  f_msg -d "PROGEXT=$PROGEXT"
+  f_msg -d "PROGNAME=$PROGNAME"
+  f_msg -d "PACMAN=$PACMAN"
+  f_msg -d "OS=$OS"
+  f_msg -d "CODENAME=$CODENAME"
+  f_msg -d "DISTRONAME=$DISTRONAME"
+  f_msg -d "DISTROVERSION=$DISTROVERSION"
+  f_msg -d "DISTROMAJOR=$DISTROMAJOR"
+  f_msg -d "DISTROMINOR=$DISTROMINOR"
+  f_msg -d "DISTROPATCH=$DISTROPATCH"
+  f_msg -d "LOG=$LOG"
+  f_msg -d "LOGGING=$LOGGING"
+  f_msg -d "LOGEXEC=$LOGEXEC"
+  f_msg -d "VERBOSE=$VERBOSE"
+  f_msg -d "DEBUG=$DEBUG"
+  f_msg -d "DRYRUN=$DRYRUN"
+  f_msg -d "SKIP=$SKIP"
+  f_msg -d "RAN=$RAN"
+  f_msg -d "DAYS=$DAYS"
+}
+
+# prompt for execution
+#---------------------------------------
+f_prompt () {
+  if [ $SKIP = false ] && [ $DRYRUN = false ] ;then
+    printf "$HELP_TXT"
+    read -p "
+Do you want to proceed?
+[(y)es, (n)o]: " ANSWER
+    case $ANSWER in
+      y|yes)  :                                     ;;
+      n|no)   f_exit                                ;;
+      *)      f_msg -e "Unknown option(s): $ANSWER"  ;;
+    esac
+  fi
+}
+
+# verify root execution
+#---------------------------------------
+f_vroot () {
+  if [[ `whoami` != root ]] ;then
+    f_msg -e -d "This script needs to be run as root. Current user: `whoami`"
+  fi
+}
+
+# verify file/directory exists
+#---------------------------------------
+f_exist () {
+  if [[ -e $1 ]] ;then
+    f_msg -d "Does exist: $1"
+  else
+    f_msg -d -e "Does not exist: $1"
+  fi
+}
+
+# rotate log file
+#---------------------------------------
+f_logro () {
+  if [[ LOGGING = true ]] ;then
+    f_msg -d "LOGROTATE: create temporary log rotate config: $LOGROCONF"
+    f_run "echo \"$LOG {
+      weekly
+      missingok
+      compress
+      dateext
+      dateformat -%Y-%m-%d
+      maxsize 300M
+      rotate 3
+      notifempty
+      create 0644 root root
+    }\" > $LOGROCONF"
+    f_msg -d "LOGROTATE: fix permissions: $LOG"
+    f_run "chown root:root $LOG ;chmod 0644 $LOG"
+    f_msg -d "LOGROTATE: rotate log: $LOG"
+    f_run "logrotate -v $LOGROCONF"
+    f_msg -d "LOGROTATE: delete temporary log rotate config: $LOGROCONF"
+    f_run "rm -f $LOGROCONF"
+  fi
+}
+
+# sed: switch key for value
+#---------------------------------------
+f_sedreplace () {
+
+  # example syntax:
+  #   SEDFILE=/etc/ssh/sshd_config
+  #   SEDKEY=Port
+  #   SEDOLDVAL=22
+  #   SEDNEWVAL=1234
+  #   f_sedreplace
+
+  # set more working variables
+  SEDLINE=`grep $SEDKEY $SEDFILE`
+  SEDWC=`grep $SEDKEY $SEDFILE |wc -l`
+
+  # error check
+  if [[ $SEDWC -gt 1 ]] ;then
+    f_msg -e "Too many potential matches to execute properly: $SEDWC"
+  fi
+
+  # print working variables that are given (need to be provided)
+  f_msg -d "SEDFILE   =$SEDFILE"    # the file you want to work with
+  f_msg -d "SEDKEY    =$SEDKEY"     # a unique string in the line you want to edit
+  f_msg -d "SEDOLDVAL =$SEDOLDVAL"  # the old value to be replaced
+  f_msg -d "SEDNEWVAL =$SEDNEWVAL"  # the new value that replaces the old value
+
+# print working variables that are calculated
+  f_msg -d "SEDLINE   =$SEDLINE"    # $SEDKEY is grepped from $SEDFILE to identify the working line
+  f_msg -d "SEDWC     =$SEDWC"      # if the $SEDKEY is found in multiple lines, script will exit
+  f_msg -d "Preview new value for: $SEDOLDVAL"
+
+  # if working line has a '/' in it, don't use '/' as the delimiter
+  if [[ -z `echo $SEDLINE |grep \/` ]] ;then
+    f_run "sed \"s/$SEDOLDVAL/$SEDNEWVAL/g\" $SEDFILE |grep -C2 '$SEDNEWVAL'"  # preview
+    f_run "sed -i \"s/$SEDOLDVAL/$SEDNEWVAL/g\" $SEDFILE"                      # execute
+
+  # if working line has a '+' in it, don't use '+' as the delimiter
+  elif [[ -z `echo $SEDLINE |grep \+` ]] ;then
+    f_run "sed \"s+$SEDOLDVAL+$SEDNEWVAL+g\" $SEDFILE |grep -C2 '$SEDNEWVAL'"  # preview
+    f_run "sed -i \"s+$SEDOLDVAL+$SEDNEWVAL+g\" $SEDFILE"                      # execute
+
+  # if working line has a '~' in it, don't use '~' as the delimiter
+  elif [[ -z `echo $SEDLINE |grep \~` ]] ;then
+    f_run "sed \"s~$SEDOLDVAL~$SEDNEWVAL~g\" $SEDFILE |grep -C2 '$SEDNEWVAL'"  # preview
+    f_run "sed -i \"s~$SEDOLDVAL~$SEDNEWVAL~g\" $SEDFILE"                      # execute
+  else
+    f_msg -e "No feasible sed delimiter for line: $SEDLINE"
+  fi
+}
+
+# add a path
+#---------------------------------------
+f_addpath () {
+  PATHORIG=`env |grep ^'PATH=/' |awk -F'PATH=' '{print $2}'`
+  PATHADD=$1
+  PATHNEW="$PATHADD:$PATHORIG"
+  f_exist $PATHADD
+  f_msg -d -p "Adding path to current session: $PATHADD"
+  if [[ `echo $PATH |grep $PATHADD` ]] ;then
+    f_msg -d "Path already exists: PATH=$PATHORIG"
+  else
+    f_run "PATH=$PATHNEW"
+    f_run "export PATH=$PATHNEW"
+    f_msg -d "Old paths: PATH=$PATHORIG"
+    f_msg -d "New paths: PATH=$PATHNEW"
+  fi
+  f_msg -d -p "Adding path to $BASHRC: $PATHADD"
+  if [[ `grep 'PATH=' $BASHRC` ]] ;then
+    if [[ `grep 'PATH=' $BASHRC |grep $PATHADD` ]] ;then
+      f_msg -d "Path already exists in $BASHRC: `grep 'PATH=' $BASHRC |grep $PATHADD`"
+    else
+      f_msg -d -p "Modifying $BASHRC"
+      SEDFILE=$BASHRC
+      SEDKEY='PATH=/'
+      SEDOLDVAL="$PATHORIG"
+      SEDNEWVAL="$PATHNEW"
+      f_sedreplace
+    fi
+  else
+    f_msg -d -p "Adding line to $BASHRC"
+    f_run "echo PATH=$PATHNEW >> $BASHRC"
+  fi
+  f_run "source $BASHRC"
+}
+
+# ensure a package is installed
+#---------------------------------------
+f_install () {
+	if [[ $PACMAN == yum ]] ;then
+		f_run "yum -y install $1"
+	elif [[ $PACMAN == apt ]] ;then
+    f_run "apt-get -y install $1"
+  else
+    f_msg -e "Unrecognized package manager"
+  fi
+}
+
+# service actions
+#---------------------------------------
+
+# initd
+f_service_initd () {
+  if   [[ $SRVACTION == enable ]] ;then
+    f_run "chkconfig $SERVICE on"
+  elif [[ $SRVACTION == disable ]] ;then
+    f_run "chkconfig $SERVICE off"
+  else
+    f_run "service $SERVICE $SRVACTION"
+  fi
+}
+
+# systemd
+f_service_systemd () { f_run "systemctl $SRVACTION $SERVICE" ; }
+
+# default
+f_service_default () { f_service_systemd ; }
+
+# action-service
+f_service () {
+  SRVACTION=$1  # start, stop, enable, disable, status
+  SERVICE=$2    # sshd, ntpd, ...
+  if   [[ $DISTRONAME == centos ]] && [[ $DISTROMAJOR == 6 ]] ;then
+    f_service_initd
+  elif [[ $DISTRONAME == centos ]] && [[ $DISTROMAJOR == 7 ]] ;then
+    f_service_systemd
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 1404 ]] ;then
+    f_service_initd
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 1604 ]] ;then
+    f_service_systemd
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 1804 ]] ;then
+    f_service_systemd
+  else
+    f_msg -e "Unrecognized distro"
+  fi
+}
+
+# delay
+#---------------------------------------
+f_sleep () { f_run "sleep $DELAY" ; }
+
+# install apg and generate password
+#---------------------------------------
+f_password () {
+  f_msg -p "Installing password generator"
+  if [[ $OS = linux ]] ;then
+    if [[ $DISTRONAME == centos ]] ;then
+      f_install epel-release
+    fi
+    f_install apg
+    PASSWORD=`apg -m 16 -n 1`
+  else
+    f_msg -e "Unsupported OS: $OS"
+  fi
+}
+
+# script start
+#===============================================================================
+
+# body
+#---------------------------------------
+
+# determine OS
+f_msg -d -p "Determining Operating System, Package Manager, OS Codename, Distro Name, and OS Version"
+if [[ `yum --help 2> /dev/null` ]] ;then
+  OS=linux ;PACMAN=yum
+  BASHRC='/etc/bashrc'
+  if [[ `grep -i centos /etc/centos-release` ]] ;then
+    DISTRONAME=centos
+    CODENAME=null
+    DISTROVERSION=`awk -F'release' '{print $2}' /etc/centos-release |awk '{print $1}'`
+  fi
+elif [[ `apt-get --help 2> /dev/null` ]] ;then
+  OS=linux ;PACMAN=apt
+  BASHRC='/etc/bash.bashrc'
+  if [[ `lsb_release -a 2>/dev/null |grep -i ubuntu` ]] ;then
+    DISTRONAME=ubuntu
+    CODENAME=`lsb_release -a 2>/dev/null |grep ^Codename: |awk '{print $2}'`
+    DISTROVERSION=`lsb_release -a 2>/dev/null |grep ^Description: |awk '{print $3}'`
+  elif [[ `lsb_release -a |grep -i debian` ]] ;then
+    DISTRONAME=debian
+    CODENAME=`lsb_release -a 2>/dev/null |grep ^Codename: |awk '{print $2}'`
+    DISTROVERSION=`lsb_release -a 2>/dev/null |grep ^Description: |awk '{print $4}'`
+  fi
+elif [[ `sw_vers 2> /dev/null` ]] ;then
+  OS=mac ;PACMAN=xcode
+  DISTRONAME=`system_profiler SPSoftwareDataType SPNetworkDataType |grep 'Kernel Version:' |awk '{print $3}'`
+  DISTROVERSION=`sw_vers |grep ProductVersion: |awk '{print $2}'`
+  DISTROMINOR=`echo $DISTROVERSION |awk -F'.' '{print $1"."$2}'`
+  case $DISTROMINOR in
+    '10.10')  CODENAME=yosemite      ;;
+    '10.11')  CODENAME=el_capitan    ;;
+    '10.12')  CODENAME=sierra        ;;
+    '10.13')  CODENAME=high_sierra   ;;
+    '10.14')  CODENAME=mojave        ;;
+    *)        CODENAME=unidentified  ;;
+  esac
+else
+  OS=unidentified ;PACMAN=$OS ;CODENAME=$OS ;DISTRONAME=$OS ;DISTROVERSION=$OS
+fi
+DISTROMAJOR=`echo $DISTROVERSION |awk -F'.' '{print $1}'`
+DISTROMINOR=`echo $DISTROVERSION |awk -F'.' '{print $2}'`
+DISTROPATCH=`echo $DISTROVERSION |awk -F'.' '{print $3}'`
+
+# set environment variables
+if [[ ! -z $EDITOR ]] ;then
+  :
+elif [[ `which vim` ]] ;then
+  EDITOR='vim'
+elif [[ `which vi` ]] ;then
+  EDITOR='vi'
+elif [[ `which nano` ]] ;then
+  EDITOR='nano'
+fi
+
+# set random password
+if [[ $OS == linux ]] ;then
+  PASSWORD=`date |sha256sum |cut -c 1-16`
+elif [[ $OS == mac ]] ;then
+  PASSWORD=`date |shasum -a 256 |cut -c 1-16`
+fi

@@ -1,0 +1,170 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+#---------------------------------------
+# initialize values
+
+DELAY=1      # seconds of delay between some commands
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script runs various puppet tools.
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+TOOLS:
+  -es, --edit-site              edit main puppet site.pp file (with default editor: $EDITOR)
+  -cy, --clear-yaml             clear out old puppet yaml files
+  -cc, --cert-clean <hostname>  remove ssl cert for given hostname (server or client)
+
+EXAMPLES:
+  Normal operation:  # $PROG --clear-yaml
+  Dry run:           # $PROG -vv -dr --cert-clean app.domain.com
+  Logging:           # $PROG --clear-yaml -v --log
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+# clear out old puppet yaml files
+
+f_pyaml ()  {
+DIR=/var/lib/puppet/reports
+DAYS=14
+f_msg "cleaning/purging puppet server yamls older than $DAYS days..."
+f_run "find $DIR/ -type f -mtime +$DAYS -exec rm -f '{}' \; "
+}
+
+#---------------------------------------
+# remove ssl cert for given hostname
+
+f_pclean () {
+PUPMASTER=`puppet config print |grep ^'server = ' |awk '{print $3}'`
+PUPAGENT=`puppet config print |grep ^'certname = ' |awk '{print $3}'`
+if [ $HOST ] ;then
+  if [[ $PUPMASTER == $PUPAGENT ]] ;then
+    f_msg "Removing puppet cert on puppet server for $HOST ..."
+    f_run "puppet cert clean $HOST"
+    f_run "sleep $DELAY"
+    f_run "puppet cert clean $HOST"
+  else
+    f_msg "Removing puppet cert on puppet client for $HOST ..."
+    SSLDIR=`puppet config print |grep ^ssldir |awk '{print $3}'`
+    #f_run "find $SSLDIR -name $HOST.pem -delete"
+    f_run "rm -rf $SSLDIR"
+  fi
+else
+  f_msg -e -d "You need to provide a hostname as an argument."
+fi
+}
+
+#---------------------------------------
+# edit puppet config
+
+f_setsitefile () {
+if [[ -d $PUPDIR ]] ;then
+  SFILE=`find $PUPDIR -type f -name site.pp`                # site file
+  COUNT=`find $PUPDIR -type f -name site.pp |wc -l`         # line count
+	if [[ $COUNT -lt 1 ]] ;then
+		f_msg -e "No site.pp files found in $PUPDIR"
+	fi
+	if [[ $COUNT -gt 1 ]] ;then
+		f_msg -e "Too many site.pp files found in $PUPDIR"
+	fi
+fi
+}
+
+f_esite () {
+PUPDIR=/etc/puppet
+f_setsitefile
+PUPDIR=/etc/puppetlabs
+f_setsitefile
+f_exist $SFILE
+f_msg "Editing $SFILE"
+f_run "$EDITOR $SFILE"
+}
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    -cy|--clear-yaml)  PYAML=true ;shift  ;;
+    -cc|--cert-clean)  PCLEAN=true ; HOST=$2 ;shift ;shift  ;;
+    -es|--edit-site)   ESITE=true ; HOST=$2 ;shift  ;;
+    "")                break  ;;
+    *)                 f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+f_msg -d "PYAML=$PYAML"
+f_msg -d "PCLEAN=$PCLEAN"
+
+#---------------------------------------
+# error checks
+
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# filter options
+
+if [[ $PYAML == true ]] ;then
+  f_pyaml ;RAN=true
+fi
+if [[ $PCLEAN == true ]] ;then
+  f_pclean ;RAN=true
+fi
+if [[ $ESITE == true ]] ;then
+  f_esite ;RAN=true
+fi
+if [[ $RAN != true ]] ;then
+  f_msg -e "No tools have been defined."
+fi
+
+#===============================================================================
+# cleanup
+
+f_logro  # rotate log
+f_exit   # exit script

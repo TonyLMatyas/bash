@@ -1,0 +1,150 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# source files
+
+source /usr/local/sbin/zellib
+
+#===============================================================================
+# variables
+
+#---------------------------------------
+# custom values
+
+
+#---------------------------------------
+# files
+
+LISTFILE=/etc/gin.list
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script types out ssh commands for you and executes them.
+GIN stands for \"Get IN\".
+
+Reference File
+  The reference file is used to populate the hostname list at the second prompt:
+    $LISTFILE
+  The reference file requires 4 sections in it (separated by spaces):
+    <hostname> <user> <port> <private_ssh_key_file_path> <optional comments>
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+$HELP_TXT_EXAMPLES
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#===============================================================================
+# script start
+
+clear
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+SKIP=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    "")                                           break  ;;
+    *)   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+
+#---------------------------------------
+# error checks
+
+f_exist $LISTFILE
+#f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# select server
+
+# first prompt: filter
+read -p "
+Enter a string to filter the hostname list (case-insensitive grep).
+(To view all hosts, leave blank and hit enter.)
+[selection]: " SELECTION
+
+LISTOPTIONS=`grep -i "$SELECTION" $LISTFILE`
+
+# second prompt: selection
+COUNT=`echo "$LISTOPTIONS" |wc -l |xargs`
+LISTNUM=`echo "$LISTOPTIONS" |sort |cat -n |column -t`
+
+read -p "
+`echo "$LISTNUM" |awk '{$4=$5=""; print $0}' |column -t`
+
+Which server do you want to log into?
+[1-$COUNT, (q)uit]: " SELECTION
+
+#---------------------------------------
+# error checking
+
+if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
+  f_exit
+elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
+  f_msg -e -d "invalid selection"
+fi
+
+#---------------------------------------
+# set variables
+
+HOST=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $2}' |awk '{print $1}'`
+USER=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $3}' |awk '{print $1}'`
+PORT=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $4}' |awk '{print $1}'`
+KEY=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $5}' |awk '{print $1}'`
+#IP=`ping -c1 $HOST |grep "bytes from" |awk '{print $4}' |cut -d: -f1`
+
+#---------------------------------------
+# ssh into server
+
+f_msg "
+
+HOST=$HOST
+USER=$USER
+PORT=$PORT
+KEY=$KEY
+IP=$IP
+
+ssh -p $PORT -i $KEY $USER@$HOST
+
+"
+
+f_run "ssh -p $PORT -i $KEY $USER@$HOST"
+
+#===============================================================================
+# cleanup
+
+f_logro  # rotate log
+f_exit   # exit script

@@ -1,0 +1,223 @@
+#!/bin/bash
+# created by: Zell
+
+# variables
+#===============================================================================
+PROG=`basename $0`
+SRCFILE="/etc/$PROG.txt"
+APTCFG='/etc/apt/apt.conf'
+APTORIG="$APTCFG.orig"
+if [[ -f /run/resolvconf/resolv.conf ]]
+  then RESCFG='/run/resolvconf/resolv.conf'
+  else RESCFG='/etc/resolv.conf' ;fi
+RESORIG="$RESCFG.orig"
+RESMOD="$RESCFG.mod"
+
+# functions
+#===============================================================================
+
+# help text
+#---------------------------------------
+f_help () {
+  clear ;echo "
+This script toggles custom proxy settings on/off.
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+OPTIONS:
+  -h, --help            display this help text and exit
+  -i, --init, --update  display this help text and exit
+  -f, --source-file     define custom source file
+                        default: $SRCFILE
+  --on                  enable proxy settings
+  --off                 disable proxy settings
+
+NOTES:
+  To work, the '--init' argument needs to be run at least once:
+    # $PROG --init
+  don't combine options:
+    correct:         # $PROG -i --on
+    incorrect:       # $PROG -ion
+    incorrect:       # $PROG -if <SourceFile>
+"
+}
+
+# source custom parameters
+#---------------------------------------
+f_srcfile () {
+  if [[ ! -f $SRCFILE ]] ;then
+    echo "Source file doesn't exist: $SRCFILE"
+    echo "Must run '# $PROGNAME --init' at least once as the root user."
+    exit ;fi
+  source $SRCFILE
+}
+
+# initialize/update config
+#---------------------------------------
+f_proxyinit () {
+
+  # verify root execution
+  if [[ `whoami` != root ]] ;then
+    f_help
+    echo "This needs to be run as the root user. Current user: `whoami`" ;exit
+  fi
+
+  # prepare apt.conf
+  echo "Prepare/Modify $APTCFG"
+  if [[ ! -f $APTCFG ]] ;then touch $APTCFG ;fi
+  cat $APTCFG > $APTORIG
+
+  # prepare resolv.conf
+  echo "Prepare/Modify $RESMOD"
+  if [[ ! -f $RESMOD ]] ;then
+    echo "# custom DNS settings for $PROG
+nameserver 8.8.8.8
+search domain.com" > $RESMOD ;fi
+
+  cat $RESCFG > $RESORIG
+  echo ;echo ;echo ;read -p "Press 'enter' to continue editing file.
+$RESMOD: " ANSWER
+  $EDITOR $RESMOD
+
+  # modify source file
+  echo "Prepare/Modify $SRCFILE"
+  if [[ ! -f $SRCFILE ]] ;then
+    echo "HTTPURL='http://'
+HTTPSURL='https://'
+OMITLIST='localhost,127.0.0.1,domain.com,example.net'" > $SRCFILE ;fi
+  SRCORIG="$SRCFILE.orig"
+  cat $SRCFILE > $SRCORIG
+  echo ;echo ;echo ;read -p "Press 'enter' to continue editing file.
+$SRCFILE: " ANSWER
+  $EDITOR $SRCFILE
+
+  # set perms
+  echo "Set Permissions for $RESCFG, $RESMOD, and $APTCFG"
+  echo ;echo ;echo ;read -p "Do you want to open permissions to non-sudo users?
+(y)es, (n)o: " ANSWER
+  case $ANSWER in
+    'y'|'yes'|'Y'|'Yes')
+      PERMS='0666'
+      echo "Changing permissions to $PERMS for $RESMOD"
+      chmod $PERMS $RESMOD
+      echo "Changing permissions to $PERMS for $RESCFG"
+      chmod $PERMS $RESCFG
+      echo "Changing permissions to $PERMS for $APTCFG"
+      chmod $PERMS $APTCFG
+    ;;
+    *)  echo "Leaving permissions the same"  ;;
+  esac
+}
+
+# check files & variables
+#---------------------------------------
+f_varcheck () {
+  clear ;echo "Contents of $RESCFG:"
+  cat $RESCFG ;echo
+  echo "Contents of $APTCFG:"
+  cat $APTCFG ;echo
+  echo "Current proxy environment variables:"
+  env |grep -i 'proxy' |sort ;echo
+}
+
+# disable the proxy settings
+#---------------------------------------
+f_proxyoff () {
+  f_srcfile # source custom parameters
+
+  # revert resolv.conf
+  if [[ ! -f $RESORIG ]] ;then  # error check
+    f_help ;echo "File does not exist: $RESORIG" ;exit ;fi
+  cat $RESORIG > $RESCFG
+
+  # unset variables
+  unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY no_proxy NO_PROXY
+
+  # revert apt.conf
+  sed -i "s~Acquire::http::Proxy \"$HTTPURL\";~~g" $APTCFG
+  sed -i "s~Acquire::https::Proxy \"$HTTPURL\";~~g" $APTCFG
+  sed -i "s~Acquire::ftp::Proxy \"$HTTPURL\";~~g" $APTCFG
+  sed -i '/^$/d' $APTCFG  # remove empty lines
+
+  f_varcheck  # check files & variables
+}
+
+# enable the proxy settings
+#---------------------------------------
+f_proxyon () {
+  f_proxyoff
+
+  # export variables from source file
+  export http_proxy=$HTTPURL
+  export HTTP_PROXY=$HTTPURL
+  export https_proxy=$HTTPSURL
+  export HTTPS_PROXY=$HTTPSURL
+  export no_proxy=$OMITLIST
+  export NO_PROXY=$OMITLIST
+
+  # alter resolv.conf
+  cat $RESMOD > $RESCFG
+
+  # alter apt.conf
+  echo "Acquire::http::Proxy \"$HTTPURL\";" >> $APTCFG
+  echo "Acquire::https::Proxy \"$HTTPURL\";" >> $APTCFG
+  echo "Acquire::ftp::Proxy \"$HTTPURL\";" >> $APTCFG
+
+  f_varcheck  # check files & variables
+}
+
+# script start
+#===============================================================================
+echo "SCRIPT START"
+
+# process arguments
+#---------------------------------------
+while (( "$#" > 0 )) ;do
+  case $1 in
+    '-h'|'--help')  f_help ;exit  ;;
+    '-i'|'--init'|'--update')  INIT=true ;shift  ;;
+    '-f'|'--source-file')  SRCFILE=$2 ;shift ;shift  ;;
+    '--on')  PON=true ;shift  ;;
+    '--off')  POFF=true ;shift  ;;
+    *)  f_help ;echo "Unknown option(s): $INITARGS" ;exit  ;;
+    "")  break  ;;
+  esac
+done
+
+# error checks
+#---------------------------------------
+
+# verify default editor installation
+if [[ -z $EDITOR ]] ;then
+  if [[ `which vim` ]] ;then
+    EDITOR='vim'
+  elif [[ `which vi` ]] ;then
+    EDITOR='vi'
+  elif [[ `which nano` ]] ;then
+    EDITOR='nano'
+  else
+    f_help
+    echo "One of these editors needs to be installed: 'vim', 'vi', 'nano'" ;exit
+  fi
+fi
+
+# check resolv.conf
+if [[ ! -f $RESCFG ]] ;then
+  f_help ;echo "$RESCFG does not exist!" ;exit ;fi
+
+# check for contradiction
+if [[ $PON == true ]] && [[ $POFF == true ]];then
+  f_help ;echo "Cannot turn proxy both 'on' and 'off'." ;exit ;fi
+
+# body
+#---------------------------------------
+
+# initialize/update
+if [[ $INIT == true ]] ;then f_proxyinit ;fi
+
+# toggle proxy on/off
+if [[ $POFF == true ]]
+  then f_proxyoff
+  elif [[ $PON == true ]]
+  then f_proxyon ;fi

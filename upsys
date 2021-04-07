@@ -1,0 +1,124 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script updates the system based on the package manager:
+  apt-get
+  yum
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+$HELP_TXT_EXAMPLES
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+# update via apt
+
+f_apt () {
+f_msg "Updating via apt-get ..."
+f_run "apt-get -y update"
+f_run "apt-get -y upgrade"
+f_run "apt-get -y dist-upgrade"
+f_run "apt-get -y autoremove"
+f_run "apt-get -y autoclean"
+}
+
+#---------------------------------------
+# update via yum
+
+f_yum () {
+f_msg "Updating via yum ..."
+f_run "yum -y update"
+f_run "yum -y upgrade"
+f_run "yum -y clean all"
+}
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    "")  break  ;;
+    *)   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+
+#---------------------------------------
+# error checks
+
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# update
+
+# package manager
+case $PACMAN in
+  apt)  f_apt                               ;;
+  yum)  f_yum                               ;;
+  *)    f_msg -w "Unknown Package Manager"  ;;
+esac
+
+# mlocate
+if [[ `updatedb --help 2> /dev/null` ]] ;then
+  f_msg "Updating DB for mlocate ..."
+  f_run "updatedb"
+fi
+
+# rkhunter
+if [[ `rkhunter --help 2> /dev/null` ]] ;then
+  f_msg "Updating RootKitHunter ..."
+  f_run "rkhunter --update --nocolors"
+fi
+
+#===============================================================================
+# cleanup
+
+f_logro  # rotate log
+f_exit   # exit script

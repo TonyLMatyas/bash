@@ -1,0 +1,206 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+if [[ -f $LIB ]] ;then
+  source $LIB
+fi
+
+#---------------------------------------
+# custom values
+
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script helps you edit the defined forward zone file & reverse zone file.
+The Serial number will be incremented automatically.
+Afterwards, the configuration is checked; if there are errors, your edits are reverted.
+  named config: $NCONF
+  Forward zone: $FZONE
+  Reverse zone: $RZONE
+
+PREREQUISITES:
+  $LIB must be populated with the following variables (example values):
+NCONF=/etc/named.conf                 # named config
+DOMAIN=domain.com                     # domain name
+ADDR=172.16.123                       # address
+FZONE=/etc/named/zones/db.domain.com  # forward zone file
+RZONE=/etc/named/zones/db.172.16.123  # reverse zone file
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+$HELP_TXT_EXAMPLES
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+# config check
+
+f_check () {
+if [[ `echo $?` != 0 ]] ;then
+  f_run "mv -f $NCONF.bak $NCONF"
+  f_run "mv -f $FZONE.bak $FZONE"
+  f_run "mv -f $RZONE.bak $RZONE"
+  f_msg -e "Syntax error. Config Reverted."
+fi
+}
+
+#---------------------------------------
+# compare md5 sums
+
+f_compare () {
+if [[ $SKIP != true ]] && [[ `md5sum $ONE |awk '{print $1}'` != `md5sum $TWO |awk '{print $1}'` ]] ;then
+  SKIP=true
+  f_msg "Restarting named ..."
+  f_run "service named restart"
+fi
+}
+
+#---------------------------------------
+# increment serial number
+
+f_serialinc () {
+SERIALOLD=`grep \; $1 |grep Serial $1 |head -n1 |awk '{print $1}'`
+SERIALOLDDATE=${SERIALOLD:: +8}
+SERIALOLDINC=${SERIALOLD: -2}
+f_msg "old serial number is $SERIALOLD"
+f_msg -d "old serial date is $SERIALOLDDATE"
+f_msg -d "old serial increment is $SERIALOLDINC"
+
+SERIALADD=$((SERIALOLD+1))
+f_msg -d "incremented serial number is $SERIALADD"
+
+SERIALNEWDATE=$DATEYEAR$DATEMONTHNUM$DATEDAY
+if [[ $SERIALNEWDATE -gt $SERIALOLDDATE ]] ;then
+	SERIALNEWINC='00'
+else
+  SERIALNEWINC=${SERIALADD: -2}
+fi
+SERIALNEW=$SERIALNEWDATE$SERIALNEWINC
+if [[ $SERIALADD -gt $SERIALNEW ]] ;then
+	f_msg -w "serial number is not in standard format!"
+  SERIALNEW=$SERIALADD
+fi
+f_msg "new serial number is $SERIALNEW"
+f_msg -d "new serial date is $SERIALNEWDATE"
+f_msg -d "new serial increment is $SERIALNEWINC"
+
+SEDFILE=$1
+SEDKEY='Serial'
+SEDOLDVAL=$SERIALOLD
+SEDNEWVAL=$SERIALNEW
+f_sedreplace
+}
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    "")  break  ;;
+    *)   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+f_msg -d "ADDR=$ADDR"
+f_msg -d "DOMAIN=$DOMAIN"
+f_msg -d "FZONE=$FZONE"
+f_msg -d "NCONF=$NCONF"
+f_msg -d "RZONE=$RZONE"
+
+#---------------------------------------
+# error checks
+
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+# check if needed files exist
+f_exist $LIB
+f_exist $FZONE
+f_exist $RZONE
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# backup files
+
+f_msg -d "backing up files ..."
+f_run "cp -af $NCONF $NCONF.bak"
+f_run "cp -af $FZONE $FZONE.bak"
+f_run "cp -af $RZONE $RZONE.bak"
+
+#---------------------------------------
+# edit zone files
+
+# forward zone file
+f_msg "editing $FZONE ..."
+f_run "$EDITOR $FZONE"
+f_serialinc $FZONE
+
+# reverse zone file
+f_msg "editing $RZONE ..."
+f_run "$EDITOR $RZONE"
+f_serialinc $RZONE
+
+#---------------------------------------
+# check syntax
+
+f_msg -d "checking syntax ..."
+f_run "named-checkconf $NCONF" ;f_check
+f_run "named-checkzone $DOMAIN $FZONE" ;f_check
+f_run "named-checkzone $ADDR $RZONE" ;f_check
+
+#---------------------------------------
+# restart named
+
+ONE=$NCONF
+TWO=$NCONF.bak
+f_compare
+ONE=$FZONE
+TWO=$FZONE.bak
+f_compare
+ONE=$RZONE
+TWO=$RZONE.bak
+f_compare
+
+#===============================================================================
+# cleanup
+
+f_logro  # rotate log
+f_exit   # exit script

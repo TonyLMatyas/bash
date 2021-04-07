@@ -1,0 +1,254 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file(s)
+
+source /usr/local/sbin/zellib
+
+if [[ ! -f $LIB ]] ;then
+LIB=$TMP
+  echo "# ssl strength
+HASH=sha256                  # cryptographic hash
+ALGO=rsa                     # algorithm (weaker alternative: dsa)
+BITS=4096                    # minimum bits: 2048
+DAYS=365                     # days before cert expires
+# info for ssl cert
+USER=admin                   # email username for specified domain
+COUNTRY='US'                 # country
+STATE='New York'             # state
+CITY='New York'              # city
+ORGANIZATION='Company Name'  # organization
+ORGUNIT='Web Division'       # organization unit" > $LIB
+fi
+source $LIB
+
+#---------------------------------------
+# custom values
+
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script runs various SSL tools.
+
+PREREQUISITES:
+  $LIB must be populated with the following variables (example values):
+# ssl strength
+HASH=sha256                  # cryptographic hash
+ALGO=rsa                     # algorithm (weaker alternative: dsa)
+BITS=4096                    # minimum bits: 2048
+DAYS=365                     # days before cert expires
+# info for ssl cert
+USER=admin                   # email username for specified domain
+COUNTRY='US'                 # country
+STATE='New York'             # state
+CITY='New York'              # city
+ORGANIZATION='Company Name'  # organization
+ORGUNIT='Web Division'       # organization unit
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+TOOLS:
+  -f, --fetch <fqdn>             get the ssl certificate from a specified domain
+                                   (outputs to temp file: $TMP)
+  -g, --generate <fqdn>          generate encrypted key, decrypted key, csr, and crt
+  -gv3, --generate-v3 <fqdn>     generate ROOTCA files & version 3 SAN keys, csr, and crt
+  -d, --decode <fqdn>            decode a specified domain
+  -d, --decode /path/to/ssl.crt  decode a specified ssl certificate file
+                                   (if file doesn't exist, will fall back to the 'domain' method)
+
+EXAMPLES:
+  Normal operation:  # $PROG -f sub.domain.com
+  Dry run:           # $PROG -vv -dr --generate www.example.net
+  Logging:           # $PROG -v --log -gv3 host.server.org
+
+$HELP_TXT_NOTES
+  New files will be created in the current working directory:
+    `pwd`
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+# create cert files (version 1) CN method
+
+f_sslgenv1() {
+KEY="$FQDN.key"
+CSR="$FQDN.csr"
+CRT="$FQDN.crt"
+
+f_msg "Creating encrypted key file: $FQDN"
+f_run "openssl genrsa -des3 -out $FQDN $BITS"
+f_msg "Creating decrypted key file: $KEY"
+f_run "openssl $ALGO -in $FQDN -out $KEY"
+f_msg "Generating CSR file: $CSR"
+f_run "openssl req -new -key $KEY -out $CSR"
+f_msg "Signing CRT file: $CRT"
+f_run "openssl x509 -req -days $DAYS -in $CSR -signkey $KEY -out $CRT"
+
+# check if ssl key matches ssl cert
+# if the output of these commands match, then the certs also match
+f_msg "Validating SSL files..."
+f_run "openssl x509 -noout -modulus -in $FQDN.crt |openssl md5"
+f_run "openssl $ALGO -noout -modulus -in $FQDN.key |openssl md5"
+f_run "openssl req -noout -modulus -in $FQDN.csr |openssl md5"
+}
+
+#---------------------------------------
+# create cert files (version 3) SAN method
+
+f_sslgenv3() {
+KEY="$FQDN.key"
+CSR="$FQDN.csr"
+CRT="$FQDN.crt"
+CNF="$CSR.cnf"
+V3EXT="$FQDN.ext"
+ROOTCAKEY="rootCA-$FQDN.key"
+ROOTCAPEM="rootCA-$FQDN.pem"
+
+# make config files
+f_msg "Creating openssl configuration file: $CNF"
+echo "[req]
+default_bits = $BITS
+prompt = no
+default_md = $HASH
+distinguished_name = dn
+
+[dn]
+C=$COUNTRY
+ST=$STATE
+L=$CITY
+O=$ORGANIZATION
+OU=$ORGUNIT
+emailAddress=$USER@$DOMAIN
+CN = $FQDN" > $CNF
+
+f_msg "Creating version 3 extension file: $V3EXT"
+echo "authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = $FQDN" > $V3EXT
+
+f_msg "Creating root CA .key: $ROOTCAKEY"
+#f_run "openssl genrsa -des3 -out $ROOTCAKEY 2048"
+f_run "openssl genrsa -des3 -out $ROOTCAKEY $BITS"
+f_msg "Creating root CA .pem: $ROOTCAPEM"
+#f_run "openssl req -x509 -new -nodes -key $ROOTCAKEY -sha256 -days 1024 -out $ROOTCAPEM"
+f_run "openssl req -x509 -new -nodes -key $ROOTCAKEY -$HASH -days $DAYS -out $ROOTCAPEM"
+#f_run "openssl req -new -sha256 -nodes -out $CSR -newkey rsa:2048 -keyout $KEY -config <( cat $CNF )"
+f_run "openssl req -new -$HASH -nodes -out $CSR -newkey rsa:$BITS -keyout $KEY -config <( cat $CNF )"
+f_run "openssl x509 -req -in $CSR -CA $ROOTCAPEM -CAkey $ROOTCAKEY -CAcreateserial -out $CRT -days $DAYS -$HASH -extfile $V3EXT"
+}
+
+#---------------------------------------
+# fetch ssl certificate
+
+f_fetch() {
+f_msg "Fetching SSL certificate for $FQDN..."
+f_run "openssl s_client -servername $FQDN -connect $FQDN:443 > $TMP"
+f_run "cat $TMP"
+}
+
+#---------------------------------------
+# decode certificate
+
+f_decode() {
+if [[ -f $FQDN ]] ;then
+  TMP=$FQDN
+else
+  f_fetch
+fi
+f_msg "Decoding $TMP ..."
+f_run "openssl x509 -in $TMP -text -noout"
+f_msg "Getting sha1 fingerprint..."
+f_run "openssl x509 -in $TMP -noout -fingerprint -sha1"
+f_msg "Getting $HASH fingerprint..."
+f_run "openssl x509 -in $TMP -noout -fingerprint -$HASH"
+}
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    -d|--decode)         DECODE=true ;FQDN=$2 ;shift ;shift              ;;
+    -f|--fetch)          FETCH=true ;FQDN=$2 ;shift ;shift               ;;
+    -g|--generate)       GENERATE=true ;FQDN=$2 ;shift ;shift            ;;
+    -gv3|--generate-v3)	 VERSION3=true ;FQDN=$2 ;shift ;shift            ;;
+    *)                   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+TLD=`echo $FQDN |awk -F. '{print $3}'`
+DOM=`echo $FQDN |awk -F. '{print $2}'`
+SUBDOM=`echo $FQDN |awk -F. '{print $1}'`
+DOMAIN=$DOM.$TLD
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+f_msg -d "FQDN=$FQDN"
+f_msg -d "SUBDOM=$SUBDOM"
+f_msg -d "DOM=$DOM"
+f_msg -d "TLD=$TLD"
+f_msg -d "BITS=$BITS"
+f_msg -d "ALGO=$ALGO"
+
+#---------------------------------------
+# error checks
+
+#f_vroot                  # verify root execution
+f_prompt                  # prompt for execution
+f_install openssl
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# filter selection
+
+if [[ $GENERATE == true ]] ;then
+  f_sslgenv1
+elif [[ $VERSION3 == true ]] ;then
+  f_sslgenv3
+elif [[ $FETCH == true ]] ;then
+  f_fetch
+elif [[ $DECODE == true ]] ;then
+  f_decode
+else
+  f_msg -e "Unknown options: $*"
+fi
+
+#===============================================================================
+# cleanup
+
+f_logro
+f_exit

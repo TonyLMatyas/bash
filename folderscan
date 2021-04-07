@@ -1,0 +1,102 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+SAVELOG=/var/log/$PROGNAME.saveme.log
+TOPLOG=/var/log/$PROGNAME.top.log
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script calculates the file size of all files in a given directory and outputs it into 2 files.
+  This contains every file except files that have '.saveme.' in the filename:
+    $TOPLOG
+  This contains every file does have '.saveme.' in the filename:
+    $SAVELOG
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+EXAMPLES:
+  Normal operation:  # $PROG /path/to/folder
+  Dry run:           # $PROG -vv -dr /path/to/folder
+  Logging:           # $PROG -v --log /path/to/folder
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+#
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+SKIP=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    "")          break  ;;
+    *)   DIR=$1 ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+
+#---------------------------------------
+# error checks
+
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+#
+
+f_exist $DIR
+f_msg "Calculating disk space for files in $DIR ..."
+f_run "find $DIR -type f -exec du -k '{}' \; |sort -nr > $TMP"
+f_msg "Creating top log: $TOPLOG"
+f_run "date > $TOPLOG ;grep -v '.saveme.' $TMP >> $TOPLOG"
+f_msg "Creating saveme log: $SAVELOG"
+f_run "date > $SAVELOG ;grep '.saveme.' $TMP >> $SAVELOG"
+
+#===============================================================================
+# cleanup
+
+f_logro  # rotate log
+f_exit   # exit script

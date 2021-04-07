@@ -1,0 +1,154 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+
+#---------------------------------------
+# initial values
+
+SHOWALL=false
+COUNT=5
+let HALF=$COUNT/2
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script runs:
+  # cat ./.git/config
+  # git branch -a --color
+  # git show-ref |egrep -i 'master|<current_branch>'
+  # git log --graph --all --decorate --abbrev-commit --oneline
+  # git status
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+	--lines <N>        will show N lines of each 'git' command
+	                     (can't combine with '--show-all')
+  -a, --show-all     don't cut off any output
+	                     (noramlly, only $COUNT lines of each 'git' command are shown)
+
+$HELP_TXT_EXAMPLES
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+#
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+SKIP=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    --lines)        LINES=true ;COUNT=$2 ;shift ;shift  ;;
+    -a|--show-all)  SHOWALL=true ;shift  ;;
+    "")             break  ;;
+    *)              f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+f_msg -d "SHOWALL=$SHOWALL"
+f_msg -d "LINES=$LINES"
+f_msg -d "COUNT=$COUNT"
+
+#---------------------------------------
+# error checks
+
+#f_vroot   # verify root execution
+f_prompt  # prompt for execution
+if [[ ! -d ./.git ]] ;then
+  f_msg -e "Git has not been initialized here: `pwd`"
+fi
+if [[ $LINES == true ]] && [[ ! $COUNT -gt 0 ]] ;then
+	f_msg -e "Invalid line count: $COUNT"
+fi
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# git config
+
+echo
+f_msg "DISPLAY GIT CONFIG"
+f_run "cat ./.git/config"
+
+#---------------------------------------
+# git show-ref, log, & branch
+
+BRANCH=`git status |awk -F'On branch' '{print $2}' |column -t`
+
+if [[ $SHOWALL == true ]] ;then
+	if [[ ! $LINES == true ]] ;then
+    echo
+    f_msg "DISPLAY SHOW-REF"
+    f_run "git show-ref |grep -i -e 'master' -e '$BRANCH'"
+    echo
+    f_msg "DISPLAY GIT LOG"
+    f_run "git log --graph --all --decorate --abbrev-commit --oneline |cat"
+    echo
+    f_msg "DISPLAY GIT BRANCH"
+    f_run "git branch -a --color"
+	else
+		f_msg -e "Cannot combine '--show-all' & '--lines'"
+	fi
+else
+  echo
+  f_msg "DISPLAY SHOW-REF (truncated)"
+  f_run "git show-ref |grep -i -e 'master' -e '$BRANCH' |head -n $COUNT"
+  echo
+  f_msg "DISPLAY GIT LOG (truncated)"
+  f_run "git log --graph --all --decorate --abbrev-commit --oneline |head -n $COUNT"
+  echo
+  f_msg "DISPLAY GIT BRANCH (truncated)"
+  f_run "git branch -a --color |grep -C$HALF $BRANCH"
+fi
+
+#---------------------------------------
+# git status
+
+echo
+f_msg "DISPLAY GIT STATUS"
+f_run "git status"
+
+#===============================================================================
+# cleanup
+
+f_logro
+f_exit

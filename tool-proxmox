@@ -1,0 +1,233 @@
+#!/bin/bash
+# created by: Zell
+
+# variables
+#===============================================================================
+
+# source file
+#---------------------------------------
+source /usr/local/sbin/zellib
+
+# custom values
+#---------------------------------------
+
+# initialize values
+#---------------------------------------
+PERMS=false
+UNCONFINE=false
+RPROMPT=false
+
+# help text
+#===============================================================================
+HELP_TXT="
+This script runs various proxmox tools.
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+TOOLS:
+  -tp, --top-proccesses            list top LXC's processes
+  -rg, --revert-guest <CTID/VMID>  reverts LXC/VM to latest created backup
+  -rp, --remove-prompt             remove license prompt
+  -ul, --unconfine-lxc             unconfine all LXCs
+
+EXAMPLES:
+  Normal operation:  # $PROG --remove-prompt
+  Dry run:           # $PROG -vv -dr --unconfine-lxc
+  Logging:           # $PROG -v --log --revert-lxc 123
+
+$HELP_TXT_NOTES
+
+"
+
+# functions
+#===============================================================================
+
+# unconfine all linux containers
+#---------------------------------------
+f_unconfine_lxc () {
+PVEVERS=`pveversion |awk -F'/' '{print $2}' |awk -F'.' '{print $1}'`
+if [[ $PVEVERS -ge 5 ]] ;then
+  LINE='lxc.apparmor.profile: unconfined'
+else
+  LINE='lxc.aa_profile: unconfined'
+fi
+for GUESTID in $(ls -d /etc/pve/lxc/*.conf) ;do
+  f_msg -p "checking $GUESTID"
+  if [ "`grep \"$LINE\" $GUESTID`" ] ;then
+    f_msg -d "no need to add line"
+  else
+    f_msg -p "adding line to $GUESTID"
+    f_run "echo \"$LINE\" >> $GUESTID"
+  fi
+done
+}
+
+# remove license prompt
+#---------------------------------------
+f_remove_license () {
+PVEJS=`find /usr/ -type f -name pvemanagerlib.js`
+f_msg "checking $PVEJS ..."
+if [ -f $PVEJS ] ;then
+  f_msg -d "removing license prompt..."
+  f_run "sed -i -e \"s/(data.status !== 'Active')/(false)/g\" $PVEJS"
+else
+  f_msg -e "problem finding pve file: $PVEJS"
+fi
+}
+
+# revert guest
+#---------------------------------------
+f_revert_guest () {
+
+# determine if guest is LXC or QemuVM
+#...................
+if [[ `pct status $GUESTID` ]] ;then
+  GUEST=lxc
+  GUESTCMD=pct
+  RESTORECMD='pct restore'
+  COMPFORMAT=tar
+  CONFDIR='/etc/pve/lxc'
+elif [[ `qm status $GUESTID` ]] ;then
+  GUEST=qemu
+  GUESTCMD=qm
+  RESTORECMD='qmrestore'
+  COMPFORMAT=vma
+  CONFDIR='/etc/pve/qemu-server'
+else
+  f_msg -e "Cannot find Guest ID: $GUESTID"
+fi
+
+# find storage name
+#...................
+f_msg -p "Finding storage name for $GUESTID"
+STORAGE=`grep vm.*$GUESTID.*disk $CONFDIR/$GUESTID.conf |awk -F':' '{print $2}' |awk '{print $1}'`
+f_msg -d "Storage Name = $STORAGE"
+
+# define backup directory
+#...................
+f_msg -p "Finding backup directory for $GUESTID"
+BACKDIR="`grep -C1 content.*backup /etc/pve/storage.cfg |grep 'path /' |awk '{print $2"/dump"}' |tail -1`"
+f_msg -d "Backup directory = $BACKDIR"
+
+# warning check
+COUNT="`grep -C1 content.*backup /etc/pve/storage.cfg |grep 'path /' |awk '{print $2"/dump"}' |wc -l`"
+if [[ $COUNT -gt 1 ]] ;then
+  f_msg -w "Too many matching backup directories: $COUNT."
+  f_msg -w "Please consolidate into a single backup directory."
+  f_msg -w "Continuing selected directory: $BACKDIR"
+fi
+
+# find latest backup file
+#...................
+f_msg "Finding latest backup file for $GUESTID ..."
+BACKFILE=$BACKDIR/`ls -lart $BACKDIR/ |grep $GUEST-$GUESTID.*.$COMPFORMAT.* | grep -e "lzo$" -e "gz$" |awk '{print $9}' |tail -1`
+f_msg -d "Backup file = $BACKFILE"
+
+# stop guest
+#...................
+f_msg "Stopping $GUESTID ..."
+f_run "$GUESTCMD stop $GUESTID"
+
+# restore guest
+#...................
+f_msg "Restoring $GUESTID from $BACKFILE ..."
+if [[ $GUEST == lxc ]] ;then
+  f_run "pct restore $GUESTID $BACKFILE --storage $STORAGE --force 1"
+elif [[ $GUEST == qemu ]] ;then
+  f_run "qmrestore $BACKFILE $GUESTID --storage $STORAGE --force 1"
+else
+  f_msg -e "Unknown Guest Type!"
+fi
+
+# start guest
+#...................
+f_msg "Starting $GUESTID ..."
+f_run "$GUESTCMD start $GUESTID"
+}
+
+# top LXC processes
+#---------------------------------------
+f_top_lxc_proc () {
+clear
+f_msg "Processing ..." ;echo
+
+for PID in `top -bc -n2 |grep -v grep |grep -A11 PID |tail |awk '{print $1}'` ;do
+  CTID=`find /proc/$PID -maxdepth 1 -type f -name cgroup -exec cat '{}' \; |grep freezer |awk -F'lxc/' '{print $2}' |awk -F'/' '{print $1}'`
+  if [[ ! -z $CTID ]] ;then
+    PROCESS=`ps -ef |awk '{$1=$3=$4=$5=$6=$7=""; print $0}' |column -t |grep ^$PID |awk '{$1=""; print $0}'`
+    f_msg "CTID=$CTID  PID=$PID"
+    f_msg "PROCESS=$PROCESS"
+    echo
+  fi
+done
+}
+
+# script start
+#===============================================================================
+
+# preset variables (optional)
+#---------------------------------------
+VERBOSE=true
+
+# process options
+#---------------------------------------
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    -rp|--remove-prompt)   RPROMPT=true ;shift  ;;
+    -ul|--unconfine-lxc)   UNCONFINE=true ;shift  ;;
+    -rg|--revert-guest)    RVRTGUEST=true ;GUESTID=$2 ;shift ;shift  ;;
+    -tp|--top-proccesses)  TOPLXCPROC=true ;shift  ;;
+    "")                    break  ;;
+    *)                     f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+# arguments
+#---------------------------------------
+f_msg -l -d "SCRIPT START"
+f_arguments
+f_msg -d "UNCONFINE=$UNCONFINE"
+f_msg -d "RPROMPT=$RPROMPT"
+f_msg -d "RVRTGUEST=$RVRTGUEST"
+f_msg -d "GUESTID=$GUESTID"
+f_msg -d "TOPLXCPROC=$TOPLXCPROC"
+
+# error checks
+#---------------------------------------
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+# body
+#===============================================================================
+
+# filter options
+#---------------------------------------
+if [[ $UNCONFINE == true ]] ;then
+  f_unconfine_lxc ;RAN=true
+fi
+if [[ $RPROMPT == true ]] ;then
+  f_remove_license ;RAN=true
+fi
+if [[ $RVRTGUEST == true ]] ;then
+  f_revert_guest ;RAN=true
+fi
+if [[ $TOPLXCPROC == true ]] ;then
+  f_top_lxc_proc ;RAN=true
+fi
+if [[ $RAN == false ]] ;then
+  f_msg -e "No fixes have been defined."
+fi
+
+# cleanup
+#===============================================================================
+f_logro  # rotate log
+f_exit   # exit script

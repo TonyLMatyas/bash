@@ -1,0 +1,101 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script checks to see if a specified packages is currently installed.
+
+SYNTAX:
+  # $PROG [OPTIONS] <package_name>
+
+$HELP_TXT_OPTIONS
+
+EXAMPLES:
+  Normal operation:  # $PROG ssh
+  Dry run:           # $PROG -vv -dr http
+  Logging:           # $PROG -v --log haproxy
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+#
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+SKIP=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    *)  PACKAGE=$1 ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+
+#---------------------------------------
+# error checks
+
+#f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# check installed packages
+
+f_msg "Checking if $PACKAGE is installed..."
+if [[ ( `apt-get --help 2> /dev/null` ) ]] ;then
+  f_run "dpkg --get-selections |grep -i $PACKAGE"
+elif [[ ( `yum --help 2> /dev/null` ) ]] ;then
+  f_run "rpm -qa |grep -i $PACKAGE"
+fi
+
+#===============================================================================
+# cleanup
+
+#---------------------------------------
+# rotate log
+
+f_logro
+
+#...................
+# exit
+
+f_exit

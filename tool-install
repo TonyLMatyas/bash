@@ -1,0 +1,1794 @@
+#!/bin/bash
+# created by: Zell
+# variables
+#===============================================================================
+
+# source file
+#---------------------------------------
+source /usr/local/sbin/zellib
+
+# custom values
+#---------------------------------------
+
+# generic
+#...................
+BASHRC=/etc/bashrc
+SSLDIR=/etc/ssl/certs
+DELAY=2
+CORES=`grep 'cpu cores' /proc/cpuinfo |tail -n1 |awk '{print $NF}'`
+
+# ruby
+#...................
+RUBYURL=https://github.com/postmodern/ruby-install
+RUBYLIB=/usr/lib/ruby
+
+# puppet
+#...................
+SSLPUP=/etc/ssl/puppet
+PUPSSL=/etc/puppet/ssl
+TIMEOUT=5
+PUPHTTPCONF=/etc/httpd/conf.d/puppetmaster.conf
+PUPUSRDIR=/usr/share/puppet/ext/rack
+EXAMPLECONF=$PUPUSRDIR/example-passenger-vhost.conf
+
+# ldap
+#...................
+SLAPDIR='/etc/openldap/slapd.d'
+SLAPFILE='/etc/sysconfig/slapd'
+SLAPDBLDIF="$SLAPDIR/db.ldif"
+SLAPMONLDIF="$SLAPDIR/monitor.ldif"
+SLAPBASELDIF="$SLAPDIR/base.ldif"
+SLAPREADLDIF="$SLAPDIR/read_user.ldif"
+SLAPCERTSLDIF="$SLAPDIR/certs.ldif"
+SLAPROOTPWLDIF="$SLAPDIR/setrootpass.ldif"
+HOSTN=`hostname -f`
+SUB=`hostname -f |cut -d\. -f1`
+DOM=`hostname -f |cut -d\. -f2`
+TLD=`hostname -f |cut -d\. -f3`
+DOMAIN="$DOM.$TLD"
+DOMAINCAPS=`echo $DOMAIN |tr '[:lower:]' '[:upper:]'`
+FQDN="$SUB.$DOMAIN"
+PROTO='ldaps'
+LDAPPORT='389'
+LDAPSPORT='636'
+URI="$PROTO://$FQDN:$LDAPSPORT"
+USERNAME='ldapadmin'
+EMAIL="$USERNAME@$DOM.$TLD"
+USER=$USERNAME
+BINDUSER=$USERNAME
+OBJONE='users'
+OBJTWO='inetOrgPerson'
+BASE="dc=$DOM,dc=$TLD"
+DN="dc=$SUB,$BASE"
+BASEDN="ou=$OBJONE,$DN"
+BINDDN="cn=$USERNAME,$BASEDN"
+GIDNAME='groupname'
+DEFAUTHTOK=$PASSWORD
+LDAPUSER='ldap'
+VLDAPDIR='/var/lib/ldap'
+LDAPSCHEMADIR='/etc/openldap/schema'
+DBTYPE='bdb'
+
+# virtualmin
+#...................
+SDIR='/usr/local/src'
+ISCRIPT='install.sh'
+VMURI="http://software.virtualmin.com/gpl/scripts/$ISCRIPT"
+
+# MySQL
+#...................
+RMYCNF='/root/.my.cnf'
+ETCMYCNF='/etc/my.cnf'
+
+# bacula
+#...................
+BACULB='/usr/libexec/bacula'
+BACGITREPO='bacula-web'
+BACDIR='/etc/bacula'
+BACBCONCFG="$BACDIR/bconsole.conf"
+BACDIRCFG="$BACDIR/bacula-dir.conf"
+BACFDCFG="$BACDIR/bacula-fd.conf"
+BACSDCFG="$BACDIR/bacula-sd.conf"
+
+# bareos
+#...................
+BAREURI='http://download.bareos.org/bareos/release/latest/CentOS_7/bareos.repo'
+BARESCRIPTS='/usr/lib/bareos/scripts'
+BAREDINI='/etc/bareos-webui/directors.ini'
+BAREDIRD='/etc/bareos/bareos-dir.d'
+BAREMYCAT="$BAREDIRD/catalog/MyCatalog.conf"
+BAREADMINCFG="$BAREDIRD/console/admin.conf"
+BAREUSBW='/usr/share/bareos-webui'
+BAREDOCROOT="$BAREUSBW/public"
+
+# help text
+#===============================================================================
+HELP_TXT="
+This script installs various software depending on distro.
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+$HELP_TXT_EXAMPLES
+
+$HELP_TXT_NOTES
+
+"
+
+# functions
+#===============================================================================
+
+# install/update ruby
+#---------------------------------------
+f_ruby_update () {
+
+  f_msg "Updating Ruby..."
+  #...................
+
+  f_msg -d "Installing dependencies..."
+  #...................
+  f_install bzip2
+  f_install git
+
+  f_msg -d "Downloading ruby installer..."
+  #...................
+  f_run "cd /usr/local/src/"
+  f_run "git clone $RUBYURL"
+
+  f_msg -d "Installing latest Ruby version..."
+  #...................
+  f_run "/usr/local/src/ruby-install/bin/ruby-install ruby --latest"
+
+  NEWRUBY=`ls -rt /opt/rubies/ |tail -n1`
+  f_msg -d "Prepending ruby binary path in $BASHRC..."
+  #...................
+  if [[ ! `grep ^PATH $BASHRC |grep $NEWRUBY` ]] ;then
+    f_run "sed -i \"s/^PATH=/PATH=\/opt\/rubies\/$NEWRUBY\/bin:/\" $BASHRC"
+  fi
+
+  f_msg -d "Replacing ruby libraries..."
+  #...................
+  f_run "mv $RUBYLIB $RUBYLIB.$DATESEC"
+  f_run "ln -s /opt/rubies/$NEWRUBY/lib/ruby $RUBYLIB"
+
+  f_msg -d "Refreshing environment variables..."
+  #...................
+  f_run "source $BASHRC"
+}
+
+# add puppet repo
+#---------------------------------------
+f_puppet_repo () {
+
+  # selection: puppet version
+  #...................
+  read -p "
+1 (native)
+    ubuntu 14.04  v3.4.3
+    ubuntu 16.04  v3.8.5
+    ubuntu 18.04  v5.4.0
+2 (epel)
+    centos 6      ???
+    centos 7      v3.6.2
+3 (puppet labs)
+    centos 6      v3.8.7
+    centos 7      v3.8.7
+    ubuntu 14.04  v6.0.4
+    ubuntu 16.04  v6.0.4
+    ubuntu 18.04  v6.0.4
+4 (puppet labs: pc1)
+    centos 6      v4.10.12
+    centos 7      v4.10.12
+    ubuntu 14.04  v4.10.12
+    ubuntu 16.04  v4.10.12
+    ubuntu 18.04  v???
+What version do you want to install?
+[1-3, (q)uit]: " ANSWER
+
+  # define variables
+  #...................
+  case $ANSWER in
+    1)           PUPSELECTION=native             ;;
+    2)           PUPSELECTION=pdef             ;;
+    3)           PUPSELECTION=pc1def           ;;
+    'q'|'quit')  f_exit                        ;;
+    *)           f_msg -e "invalid selection"  ;;
+  esac
+
+  # define variables based on selection
+  #...................
+  if [[ $DISTRONAME == centos ]] && [[ $DISTROMAJOR == 6 ]] ;then
+    if [[ $PUPSELECTION == pdef ]] ;then
+      PUPURL='https://yum.puppetlabs.com'
+      PUPPKG='puppetlabs-release-el-6.noarch.rpm'
+    elif [[ $PUPSELECTION == pc1def ]] ;then
+      PUPURL='https://yum.puppetlabs.com'
+      PUPPKG='puppetlabs-release-pc1-el-6.noarch.rpm'
+    else
+      f_msg -e "No install method for this Puppet Version: $PUPSELECTION"
+    fi
+  elif [[ $DISTRONAME == centos ]] && [[ $DISTROMAJOR == 7 ]] ;then
+    if [[ $PUPSELECTION == pdef ]] ;then
+      PUPURL='https://yum.puppetlabs.com'
+      PUPPKG='puppetlabs-release-el-7.noarch.rpm'
+    elif [[ $PUPSELECTION == pc1def ]] ;then
+      PUPURL='https://yum.puppetlabs.com'
+      PUPPKG='puppetlabs-release-pc1-el-7.noarch.rpm'
+    else
+      f_msg -e "No install method for this Puppet Version: $PUPSELECTION"
+    fi
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 14 ]] ;then
+    if [[ $PUPSELECTION == native ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='skip'
+    elif [[ $PUPSELECTION == pdef ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='puppet-release-trusty.deb'
+    elif [[ $PUPSELECTION == pc1def ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='puppetlabs-release-pc1-trusty.deb'
+    else
+      f_msg -e "No install method for this Puppet Version: $PUPSELECTION"
+    fi
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 16 ]] ;then
+    if [[ $PUPSELECTION == native ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='skip'
+    elif [[ $PUPSELECTION == pdef ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='puppet-release-xenial.deb'
+    elif [[ $PUPSELECTION == pc1def ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='puppetlabs-release-pc1-xenial.deb'
+    else
+      f_msg -e "No install method for this Puppet Version: $PUPSELECTION"
+    fi
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 18 ]] ;then
+    if [[ $PUPSELECTION == native ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='skip'
+    elif [[ $PUPSELECTION == pdef ]] ;then
+      PUPURL='https://apt.puppetlabs.com'
+      PUPPKG='puppet-release-bionic.deb'
+    else
+      f_msg -e "No install method for this Puppet Version: $PUPSELECTION"
+    fi
+  else
+    f_msg -e "No install method for this distro: $DISTRONAME $DISTROMAJOR"
+  fi
+
+  # install/add repository
+  #...................
+  if [[ $PUPPKG != skip ]] ;then
+    f_run "cd /usr/local/src/"
+    if [[ $PACMAN == yum ]] ;then
+      f_run "yum -y update"
+      #f_run "rpm -ivh $PUPURL/$PUPPKG"  # install
+      f_run "rpm -Uvh $PUPURL/$PUPPKG"   # upgrade
+      f_run "yum -y update"
+    elif [[ $PACMAN == apt ]] ;then
+      f_run "apt-get -y update"
+      f_run "apt-get -y install wget"
+      f_run "wget $PUPURL/$PUPPKG"
+      f_run "dpkg -i /usr/local/src/$PUPPKG"
+      f_run "apt-get -y update"
+    else
+      f_msg -e "Unrecognized package manager: $PACMAN"
+    fi
+  fi
+}
+
+# define puppet package
+#---------------------------------------
+f_puppet_software () {
+  if [[ $DISTRONAME == centos ]] && [[ $DISTROMAJOR == 6 ]] ;then
+    if   [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet'
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppet-server'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppet-server'
+    fi
+  elif [[ $DISTRONAME == centos ]] && [[ $DISTROMAJOR == 7 ]] ;then
+    if   [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet'
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppet-server'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppet-server'
+    fi
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 14 ]] ;then
+    if   [[ $PUPSELECTION == native ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet'
+    elif [[ $PUPSELECTION == native ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      #SOFTWARE='puppetmaster'  # without passenger
+      SOFTWARE='puppetmaster-passenger'  # with passenger
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet-agent'
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppetserver'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet-agent'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppetserver'
+    fi
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 16 ]] ;then
+    if   [[ $PUPSELECTION == native ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet'
+    elif [[ $PUPSELECTION == native ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      #SOFTWARE='puppetmaster'  # without passenger
+      SOFTWARE='puppetmaster-passenger'  # with passenger
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet-agent'
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppetserver'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet-agent'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppetserver'
+    fi
+  elif [[ $DISTRONAME == ubuntu ]] && [[ $DISTROMAJOR == 18 ]] ;then
+    if   [[ $PUPSELECTION == native ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet'
+    elif [[ $PUPSELECTION == native ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      #SOFTWARE='puppetmaster'  # without passenger (transitional package)
+      #SOFTWARE='puppetmaster-passenger'  # with passenger (transitional package)
+      #SOFTWARE='puppet-master'  # without passenger
+      SOFTWARE='puppet-master-passenger'  # with passenger
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet-agent'
+    elif [[ $PUPSELECTION == pdef ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE='puppetserver'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupagnt ]] ;then
+      SOFTWARE='puppet-agent'
+    elif [[ $PUPSELECTION == pc1def ]] && [[ $SOFTWARE == pupmstr ]] ;then
+      SOFTWARE=''
+    fi
+  fi
+
+  if [[ $SOFTWARE == 'pupagnt' ]] || [[ $SOFTWARE == 'pupmstr' ]] ;then
+    f_msg -e "No install method for this setup: \
+    $DISTRONAME $DISTROMAJOR $PUPSELECTION $SOFTWARE"
+  fi
+}
+
+# install puppet package
+#---------------------------------------
+f_puppet_install () {
+
+  f_msg "Installing $SOFTWARE on $DISTRONAME $DISTROVERSION..."
+  #...................
+  if [[ $PACMAN == yum ]] ;then
+    f_run "yum -y update"
+    f_run "yum -y install $SOFTWARE"
+    f_run "yum -y update"
+  elif [[ $PACMAN == apt ]] ;then
+    f_run "apt-get -y update"
+    #f_run "apt-get -y install $PUPVER --allow-downgrades"
+    f_run "apt-get -y install $SOFTWARE"
+    f_run "apt-get -y update"
+  else
+    f_msg -e "Unrecognized package manager: $PACMAN"
+  fi
+}
+
+# if needed, add paths & links
+#---------------------------------------
+f_puppet_paths () {
+OPTPUPBIN=/opt/puppetlabs/puppet/bin
+if [ -d $OPTPUPBIN ] ;then
+  f_addpath $OPTPUPBIN
+fi
+PUPOLD=/etc/puppet
+PUPNEW=/etc/puppetlabs/puppet
+if [ ! -d $PUPOLD ] && [ -d $PUPNEW ] ;then
+  f_run "ln -s $PUPNEW $PUPOLD"
+fi
+PUPOLD=/var/lib/puppet
+PUPNEW=/opt/puppetlabs/puppet/cache
+if [ ! -d $PUPOLD ] && [ -d $PUPNEW ] ;then
+  f_run "ln -s $PUPNEW $PUPOLD"
+fi
+}
+
+# install puppet master (new node setup)
+#---------------------------------------
+f_puppet_master () {
+
+  # define puppet server FQDN
+  #...................
+  PUPFQDN=`hostname -f`
+
+  # ensure locale config is OK
+  #...................
+  f_reset_locale
+
+  f_msg -p "Creating SSL certificates"
+  #...................
+  mkdir -p $SSLPUP ;cd $SSLPUP
+  ssl_tool -v -y -gv3 `hostname -f`
+
+  f_msg -p "Installing Puppet"
+  #...................
+  SOFTWARE='pupmstr'
+  f_puppet_repo  # install repository: puppetlabs
+  f_puppet_software  # define package
+  f_puppet_install  # install package
+  f_puppet_paths  # if needed, add paths & links
+
+  # additional config: native ubuntu install
+  #...................
+  if [[ $DISTRONAME == ubuntu ]] && [[ $PUPSELECTION == native ]] ;then
+    TEMPLATEDIR=`find / -type d |grep puppet |grep environments$ |tail -1`
+    ENVDIR=`puppet config print |grep ^environmentpath |awk '{print $3}'`
+
+    f_msg "Creating directory structure..."
+    #...................
+    if [[ -d $TEMPLATEDIR ]] ;then
+      f_run "cp -a $TEMPLATEDIR $ENVDIR"
+    else
+      f_run "mkdir -p $ENVDIR/modules/role/manifests"
+      f_run "mkdir -p $ENVDIR/modules/profile/manifests"
+      f_run "mkdir -p $ENVDIR/manifests"
+    fi
+  fi
+
+  # additional config
+  #...................
+  if [[ ! $PUPPKG == skip ]] ;then
+
+    f_msg "Installing Apache..."
+    #...................
+    f_run "yum -y install httpd httpd-devel mod_ssl openssl-devel"
+    
+    f_msg "Installing Dependencies..."
+    #...................
+    f_msg -d "Installing Dependencies: Ruby..."
+    f_run "yum -y install ruby-devel rubygems"
+    f_msg -d "Installing Dependencies: System..."
+    f_run "yum -y install gcc gcc-c++ make automake curl-devel zlib-devel bc"
+    #f_run "yum -y install libcurl-devel"
+
+    f_msg "Installing Phusion Passenger..."
+    #...................
+    f_run "gem update --system ;gem install rack passenger"
+    if [[ $? > 0 ]] ;then
+      f_ruby_update
+      f_run "gem update --system ;gem install rack passenger"
+      if [[ ! `gem list |grep -i passenger` ]] ;then
+        f_msg -e "Passenger did not install properly!"
+      fi
+    fi
+
+    f_msg -d "Installing Passenger Apache module..."
+    #...................
+    f_run "passenger-install-apache2-module --auto --languages ruby,python"
+    #PUPAPPDIR=/usr/share/puppet/rack/puppetmasterd
+    PUPAPPDIR=/etc/puppet/rack
+
+    f_msg "Configuring Puppet..."
+    #...................
+    f_msg -d "Making Rack/Puppet directory structure..."
+    f_run "mkdir -p $PUPAPPDIR/{public,tmp}"
+    f_msg -d "Copying default config to Puppet master application directory..."
+    f_run "cp $PUPUSRDIR/config.ru $PUPAPPDIR/"
+    f_run "chown puppet:puppet $PUPAPPDIR/config.ru"
+
+    f_msg "Configuring Apache (Puppetmaster include file: $PUPHTTPCONF)..."
+    #...................
+    f_msg -d "Adding Passenger snippet to Apache config..."
+    f_run "passenger-install-apache2-module --snippet > $PUPHTTPCONF"
+    f_msg -d "Adding Optimization to Apache config..."
+    f_run "echo 'KeepAlive On' >> $PUPHTTPCONF"
+    f_run "echo \"KeepAliveTimeout $TIMEOUT\" >> $PUPHTTPCONF"
+    f_msg -d "Adding example/template Puppet config to Apache config..."
+    f_run "cat $EXAMPLECONF >> $PUPHTTPCONF"
+    f_msg -d "Remove unnecessary lines from the Apache config..."
+    f_run "sed -i 's/RackAutoDetect/#RackAutoDetect/g' $PUPHTTPCONF"
+    f_run "sed -i 's/RailsAutoDetect/#RailsAutoDetect/g' $PUPHTTPCONF"
+    f_msg -d "Adding SSL certificates to Apache config..."
+
+    # clear directory before replacing it
+    #...................
+    f_run "rm -rf $PUPSSL ;mv $SSLPUP $PUPSSL"
+
+    f_msg "Replacing individual lines in Apache config..."
+    #...................
+    SEDFILE=$PUPHTTPCONF
+
+    SEDKEY=SSLCertificateFile
+    SEDOLDVAL=`grep $SEDKEY $PUPHTTPCONF |awk '{print $2}'`
+    SEDNEWVAL=`find $PUPSSL -type f |grep crt$`
+    f_msg -d "Setting $SEDKEY..."
+    f_sedreplace
+
+    SEDKEY=SSLCertificateKeyFile
+    SEDOLDVAL=`grep $SEDKEY $PUPHTTPCONF |awk '{print $2}'`
+    SEDNEWVAL=`find $PUPSSL -type f |grep key$ |grep -v rootCA`
+    f_msg -d "Setting $SEDKEY..."
+    f_sedreplace
+
+    SEDKEY=SSLCACertificateFile
+    SEDOLDVAL=`grep $SEDKEY $PUPHTTPCONF |awk '{print $2}'`
+    SEDNEWVAL=`find $PUPSSL -type f |grep pem$ |grep rootCA`
+    f_msg -d "Setting $SEDKEY..."
+    f_sedreplace
+
+    SEDKEY=SSLCertificateChainFile
+    SEDOLDVAL=`grep $SEDKEY $PUPHTTPCONF |awk '{print $2}'`
+    
+    f_msg -d "Setting $SEDKEY..."
+    #...................
+    f_sedreplace
+
+    SEDKEY=SSLCARevocationFile
+    SEDOLDVAL=`grep $SEDKEY $PUPHTTPCONF |awk '{print $2}'`
+    
+    f_msg -d "Setting $SEDKEY..."
+    #...................
+    f_sedreplace
+
+    # recommended: about 1.5 times the number of CPUs in your master
+    SEDKEY=PassengerMaxPoolSize
+    SEDOLDVAL="$SEDKEY `grep $SEDKEY $PUPHTTPCONF |awk '{print $2}'`"
+    SEDNEWVAL="$SEDKEY `echo "$CORES*1.5" |bc |awk -F'.' '{print $1}'`"
+    
+    f_msg -d "Setting $SEDKEY..."
+    #...................
+    f_sedreplace
+
+    SEDKEY=PassengerMaxRequests
+    SEDOLDVAL="# $SEDKEY"
+    SEDNEWVAL="$SEDKEY"
+    
+    f_msg -d "Setting $SEDKEY..."
+    #...................
+    f_sedreplace
+
+    f_msg "Starting Apache..."
+    #...................
+    f_run "service httpd restart"
+  fi
+}
+
+# install puppet agent (new node setup)
+#---------------------------------------
+f_puppet_agent () {
+
+  # define puppet server FQDN
+  #...................
+  read -p "What is the FQDN of your puppet server?
+[(q)uit]: " ANSWER
+  case $ANSWER in
+    'q'|'quit')  f_exit                        ;;
+    '')          f_msg -e "invalid selection"  ;;
+    *)           PUPFQDN=$ANSWER               ;;
+  esac
+
+  # install puppet
+  #...................
+  SOFTWARE='pupagnt'
+  f_puppet_repo  # install repository: puppetlabs
+  f_puppet_software  # define package
+  f_puppet_install  # install package
+  f_puppet_paths  # if needed, add paths & links
+
+  # modify puppet conf
+  #...................
+  PUPDIR=`puppet config print |grep ^confdir |awk '{print $3}'`
+  PUPCONF=$PUPDIR/puppet.conf
+  f_exist $PUPCONF
+
+  f_msg "Modifying the Puppet config file: $PUPCONF"
+  #...................
+  f_run "cp -a $PUPCONF $PUPCONF.orig"
+  cat << EOF > $PUPCONF
+[main]
+  logdir = /var/log/puppet
+  rundir = /var/run/puppet
+  ssldir = \$vardir/ssl
+  server = $PUPFQDN
+[agent]
+  classfile = \$vardir/classes.txt
+  localconfig = \$vardir/localconfig
+  splay = true
+  splaylimit = 30m
+EOF
+
+  f_msg "Running Puppet Agent..."
+  #...................
+  f_run "puppet agent --enable"
+  f_run "puppet agent --verbose --no-daemonize --onetime"
+  f_run "puppet agent --verbose --test"
+}
+
+# reset locale
+#---------------------------------------
+f_reset_locale () {
+  if [[ -z $LANG ]] ;then
+    LANG='en_US.UTF-8'
+  fi
+  
+  f_msg "Set locale to $LANG..."
+  #...................
+  f_sleep
+  f_run "locale-gen \"$LANG\""
+  f_run "dpkg-reconfigure locales"
+}
+
+# install open ldap
+#---------------------------------------
+f_ldap_import () {
+  
+  f_msg -d "Importing $1 into openldap..."
+  #...................
+  f_run "ldapmodify -Y EXTERNAL -H ldapi:/// -f $1"
+}
+
+f_config_dbldif () {
+  
+  f_msg -d "Creating $SLAPDBLDIF..."
+  #...................
+  echo "dn: olcDatabase={2}$DBTYPE,cn=config
+changetype: modify
+replace: olcSuffix
+olcSuffix: $BASE
+
+dn: olcDatabase=={2}$DBTYPE,cn=config
+changetype: modify
+replace: olcRootDN
+olcRootDN: cn=$USER,$BASE
+
+dn: olcDatabase=={2}$DBTYPE,cn=config
+changetype: modify
+replace: olcRootPW
+olcRootPW: `cat $TMP`
+
+dn: olcDatabase={2}$DBTYPE,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: {0}to attrs=userPassword,shadowLastChange by dn=\"cn=Manager,$BASE\" write by anonymous auth by self write by * none
+olcAccess: {1}to dn.base="" by * read
+olcAccess: {2}to * by dn=\"cn=Manager,$BASE\" write by * read" > $SLAPDBLDIF
+
+  f_ldap_import $SLAPDBLDIF
+}
+
+f_config_monldif () {
+
+  f_msg -d "Creating $SLAPMONLDIF..."
+  #...................
+  echo "dn: olcDatabase={1}monitor,cn=config
+changetype: modify
+replace: olcAccess
+olcAccess: {0}to * by dn.base=\"gidNumber=0+uidNumber=0,cn=peercred,cn=external, cn=auth\" read by dn.base=\"cn=$USERNAME,$BASE\" read by * none" > $SLAPMONLDIF
+
+  f_ldap_import $SLAPMONLDIF
+}
+
+f_config_baseldif () {
+
+  f_msg -d "Creating $SLAPBASELDIF..."
+  #...................
+  echo "dn: $BASE
+dc: $DOM
+objectClass: top
+objectClass: domain
+
+dn: cn=$USERNAME,$BASE
+objectClass: organizationalRole
+cn: $USERNAME
+description: LDAP Manager
+
+dn: ou=People,$BASE
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Group,$BASE
+objectClass: organizationalUnit
+ou: Group" > $SLAPBASELDIF
+
+  # other method:
+  #...................
+  #f_ldap_import $SLAPBASELDIF
+
+  # prompt for password:
+  #...................
+  #f_run "ldapadd -x -W -D \"cn=$USERNAME,$BASE\" -f $SLAPBASELDIF"
+
+  # no prompt for password:
+  #...................
+  f_run "ldapadd -x -w $PASSWORD -D \"cn=$USERNAME,$BASE\" -f $SLAPBASELDIF"
+}
+
+f_config_readldif () {
+
+  f_msg -d "Creating $SLAPREADLDIF..."
+  #...................
+  echo "dn: uid=read,ou=People,$BASE
+objectClass: top
+objectClass: account
+objectClass: poxisAccount
+objectClass: shadowAccount
+cn: read
+uid: read
+uidNumber: 9999
+gidNumber: 100
+homeDirectory: /home/read
+loginShell: /bin/bash
+gecos: Read
+userPassword: {crypt}x
+shadowLastChange: 17058
+shadowMin: 0
+shadowMax: 99999
+shadowWarning: 7" > $SLAPREADLDIF
+
+  f_ldap_import $SLAPREADLDIF
+}
+
+f_config_ca-signed_certsldif () {
+
+  f_msg -d "Creating $SLAPCERTSLDIF..."
+  #...................
+  echo "dn: cn=config
+changetype: modify
+replace: olcTLSCACertificateFile
+olcTLSCACertificateFile: /etc/openldap/certs/$HOSTN.pem
+
+dn: cn=config
+changetype: modify
+replace: olcTLSCertificateFile
+olcTLSCertificateFile: /etc/openldap/certs/$HOSTN.crt
+
+dn: cn=config
+changetype: modify
+replace: olcTLSCertificateKeyFile
+olcTLSCertificateKeyFile: /etc/openldap/certs/$HOSTN.key" > $SLAPCERTSLDIF
+
+  f_ldap_import $SLAPCERTSLDIF
+}
+
+f_config_self-signed_certsldif () {
+
+  f_msg -d "Creating $SLAPCERTSLDIF..."
+  #...................
+  echo "dn: cn=config
+changetype: modify
+replace: olcTLSCertificateFile
+olcTLSCertificateFile: /etc/openldap/certs/$HOSTN.crt
+
+dn: cn=config
+changetype: modify
+replace: olcTLSCertificateKeyFile
+olcTLSCertificateKeyFile: /etc/openldap/certs/$HOSTN.key" > $SLAPCERTSLDIF
+
+  f_ldap_import $SLAPCERTSLDIF
+}
+
+f_config_setrootpassldif () {
+
+  f_msg -d "Creating $SLAPROOTPWLDIF..."
+  #...................
+  echo "dn: olcDatabase={0}config,cn=config
+changetype: modify
+add: olcRootPW
+olcRootPW: `cat $TMP`" > $SLAPROOTPWLDIF
+
+  f_ldap_import $SLAPROOTPWLDIF
+}
+
+f_openldap () {
+  f_password
+
+  f_msg "Creating SSL certificates..."
+  #...................
+  cd $SSLDIR
+  ssl_tool -v -y -gv3 $HOSTN
+
+  f_msg "Installing prerequisite packages..."
+  #...................
+  if [[ $DISTRONAME == centos ]] && [[ $DISTROMAJOR == 7 ]] ;then
+    f_install net-tools
+    f_install openldap
+    f_install openldap-clients
+    f_install openldap-servers
+    f_install openldap-servers-sql
+    f_install openldap-devel
+    f_install compat-openldap
+    upsys -y
+  else
+    f_msg -e "No install method for this distro: $DISTRONAME $DISTROMAJOR"
+  fi
+
+  f_msg "Starting & enabling slapd service..."
+  #...................
+  f_service start slapd
+  f_service enable slapd
+  f_service status slapd
+
+  f_msg "Generating encrypted hash..."
+  #...................
+  slappasswd -s $PASSWORD > $TMP
+
+  f_msg "Creating & importing .ldif files..."
+  #...................
+  f_config_dbldif
+  f_config_monldif
+  #f_config_readldif
+
+  f_msg "Copying DB samples into place..."
+  #...................
+  DBCFG='DB_CONFIG'
+  SLAPDBCFG="$VLDAPDIR/$DBCFG"
+  SLAPDBCFGEX=`find /usr/share/ -type f -name $DBCFG.example |grep -i open |grep -i ldap |head -n1`
+  f_run "cp -a $SLAPDBCFGEX $SLAPDBCFG"
+  f_run "chown $LDAPUSER:$LDAPUSER $VLDAPDIR/*"
+
+  f_msg "Importing remaining ldif schema files..."
+  #...................
+  f_ldap_import $LDAPSCHEMADIR/cosine.ldif
+  f_ldap_import $LDAPSCHEMADIR/nis.ldif
+  f_ldap_import $LDAPSCHEMADIR/inetorgperson.ldif
+
+  f_msg "Building directory structure..."
+  #...................
+  f_config_baseldif
+
+  f_msg "Resetting root password for ldap..."
+  #...................
+  f_config_setrootpassldif
+
+  f_msg "Setting up SSL..."
+  #...................
+  f_run "cp -a $SSLDIR/*$HOSTN* /etc/openldap/certs/"
+  f_run "chown -R $LDAPUSER:$LDAPUSER /etc/openldap/certs/*"
+  #f_config_ca-signed_certsldif  # for purchased certs
+  f_config_self-signed_certsldif  # for self-signed certs
+  f_run "cp -a $SLAPFILE{,.orig}"
+  f_run "echo 'SLAPD_URLS=\"ldapi:/// ldap:/// ldaps:///\"' > $SLAPFILE"
+  f_service restart slapd
+
+  f_msg "Verifying service status..."
+  #...................
+  f_sleep
+  f_run "netstat -antup |grep -i -e $LDAPPORT -e $LDAPSPORT"
+  f_run "slaptest -u"
+}
+
+# install phpldapadmin
+#---------------------------------------
+f_phpldapadmin () {
+
+  f_msg "Installing openldap..."
+  #...................
+  f_openldap
+
+  f_msg "Installing prerequisite packages..."
+  #...................
+  if [[ $DISTRONAME == centos ]] ;then
+    f_install epel-release
+    upsys -y
+  fi
+  f_install phpldapadmin
+  f_install mod_ssl
+  upsys -y
+
+  f_msg "Editing apache config..."
+  #...................
+  HTTPDROOT=`httpd -V |grep HTTPD_ROOT |awk -F\" '{print $2}'`
+  PLACONF=`find $HTTPDROOT -type f -name phpldapadmin.conf`
+  HTDOCS=`find /usr -type d -name htdocs |grep phpldapadmin`
+  f_run "cp -a $PLACONF{,.bak}"
+
+  echo "Alias /phpldapadmin $HTDOCS
+Alias /ldapadmin $HTDOCS
+
+<Directory $HTDOCS>
+  AllowOverride None
+  <IfModule mod_authz_core.c>
+    # Apache 2.4
+    #Require local
+    Require all granted
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    # Apache 2.2
+    Order Deny,Allow
+    Deny from all
+    Allow from 127.0.0.1
+    Allow from ::1
+  </IfModule>
+</Directory>
+
+# HTTP section
+  <VirtualHost *:80>
+  ServerName $HOSTN
+  ServerAlias ldap
+  ServerAdmin root@127.0.0.1
+  #Redirect / https://$HOSTN/  # Redirect http to https
+  Alias /phpldapadmin $HTDOCS
+  Alias /ldapadmin $HTDOCS
+</VirtualHost>
+
+# HTTPS section
+<VirtualHost *:443>
+  ServerName $HOSTN
+  ServerAlias ldap
+  ServerAdmin root@127.0.0.1
+  Alias /phpldapadmin $HTDOCS
+  Alias /ldapadmin $HTDOCS
+  SSLEngine on
+  SSLCertificateFile $SSLDIR/$HOSTN.crt
+  SSLCertificateKeyFile $SSLDIR/$HOSTN.key
+</VirtualHost>" > $PLACONF
+
+  f_msg "Editing php config..."
+  #...................
+  PLADIR='/etc/phpldapadmin'
+  PLACFGPHP=`find $PLADIR -type f -name config.php`
+  BLOWFISH=`grep blowfish $PLACFGPHP |grep Autogen |awk -F\' '{print $4}'`
+  f_run "cp -a $PLACFGPHP{,.bak}"
+  echo "<?php
+\$config->custom->session['blowfish'] = '$BLOWFISH';  # Autogenerated for ldap01
+\$config->custom->appearance['friendly_attrs'] = array(
+        'facsimileTelephoneNumber' => 'Fax',
+        'gid'                      => 'Group',
+        'mail'                     => 'Email',
+        'telephoneNumber'          => 'Telephone',
+        'uid'                      => 'User Name',
+        'userPassword'             => 'Password'
+);
+\$ldapservers->SetValue(\$i,'login','dn','cn=$USERNAME,$BASE')
+\$ldapservers->SetValue(\$i,'login','attr','uid');
+\$servers = new Datastore();
+\$servers->newServer('ldap_pla');
+\$servers->setValue('appearance','password_hash','');
+\$servers->setValue('login','attr','dn');
+\$servers->setValue('login','bind_id','cn=$USERNAME,$BASE');
+\$servers->setValue('server','base',array('$BASE'));
+\$servers->setValue('server','host','127.0.0.1');
+\$servers->setValue('server','name','$HOSTNAME LDAP Server');
+\$servers->setValue('server','port',$LDAPSPORT);
+?>" > $PLACFGPHP
+  f_service enable httpd
+  f_service restart httpd
+}
+
+# install ipa server
+#---------------------------------------
+
+# install ntpd
+#...................
+f_install_ntpd () {
+  f_install ntp
+  f_service start ntp
+  f_service senable ntp
+}
+
+# install free ipa server
+#...................
+f_freeipa_server () {
+  f_password
+
+  f_msg "Validating hostname..."
+  #...................
+  if [[ `hostname` == localhost ]] || [[ `hostname` == localhost6 ]] ;then
+    f_msg -e "Hostname cannot be `hostname`"
+  fi
+
+  f_msg "Gathering prerequisites..."
+  #...................
+  read -p "Please select installaiton method.
+[(q)uit], (a)utomated, (m)anual: " ANSWER
+
+  if [[ $ANSWER = q ]] || [[ $ANSWER = quit ]] ;then
+    f_exit
+  elif [[ $ANSWER = a ]] || [[ $ANSWER = automated ]] ;then
+    METHOD=auto
+  elif [[ $ANSWER = m ]] || [[ $ANSWER = manual ]] ;then
+    METHOD=manual
+  else
+    f_msg -e "Invalid selection."
+  fi
+
+  if [[ $METHOD == manual ]] ;then
+    read -p "What will the username be for the default accounts?
+[(q)uit]: " USER
+    if [[ $USER = q ]] || [[ $USER = quit ]] ;then
+      f_exit
+    fi
+    read -p "Install ntp?
+[(q)uit, (y)es, (n)o]: " ANSWER
+    case $ANSWER in
+      'q'|'quit')  f_exit  ;;
+      'y'|'yes')  f_install_ntpd  ;;
+      'n'|'no')  :  ;;
+      *)  f_msg -e "Invalid selection"  ;;
+    esac
+  else
+    USER='admin'
+  fi
+
+  f_msg "Installing packages..."
+  #...................
+  f_install ipa-server
+  f_install bind-utils
+  f_install rng-tools
+  f_service start rngd
+  f_service enable rngd
+
+  f_msg "Running initial configuration..."
+  #...................
+  if [[ $METHOD == auto ]] ;then
+    #f_run "ipa-server-install --hostname=$HOSTN --domain=$DOMAIN --realm=$DOMAINCAPS --ds-password=$PASSWORD --admin-password=$PASSWORD --unattended"
+    f_run "ipa-server-install --hostname=$HOSTN --domain=$DOMAIN --realm=$DOMAINCAPS --ds-password=$PASSWORD --admin-password=$PASSWORD --unattended --no-ntp"
+  else
+    f_run "ipa-server-install"
+  fi
+
+  f_msg "Acquiring Kerberos ticket for default '$USER' account..."
+  #...................
+  f_run "echo '$PASSWORD' |kinit $USER"
+
+  f_msg "Creating initial user..."
+  #...................
+  f_run "ipa user-add --password"
+
+  f_msg "Keep in mind:
+- The hostname must be fully-qualified
+- The hostname must be resolvable from other clients.
+- The reverse address that the ip resolves to must match the hostname
+
+hostname is: `hostname -f`
+admin username: $USER
+admin password: $PASSWORD"
+}
+
+# install ipa client
+#---------------------------------------
+f_freeipa_client () {
+
+  f_msg "Installing packages..."
+  #...................
+  f_install ipa-client
+  #f_install_ntpd
+
+  f_msg "Running initial configuration..."
+  #...................
+  f_run "ipa-client-install --mkhomedir"
+}
+
+# install virtualmin
+#---------------------------------------
+f_virtualmin () {
+
+f_msg -p "Checking Virtualmin"
+  #...................
+
+  virtualmin --help > /dev/null 2>&1
+  if [ $? == 0 ] || [ -d /etc/webmin ] ;then
+    f_msg "Virtualmin has already been installed."
+  else
+    f_msg -p "Installing virtualmin"
+    f_run "cd $SDIR"
+    f_run "curl -O $VMURI"
+    f_run "bash $SDIR/$ISCRIPT"    
+    f_msg -p "Manual Steps"
+    read -p "
+  1)  Log in to Webmin: https://`hostname -i`:10000
+  2)  Go through initial virtualmin setup.
+Press 'Enter' to continue.
+" ANSWER
+  fi
+}
+
+# install bacula director
+#---------------------------------------
+f_vbacula_director () {
+  f_virtualmin  # install virtualmin
+
+  f_msg -p "Setting initial, custom variables"
+  #...................
+  DBUSER='bacula'
+  INCLUDECFG='/etc/httpd/conf.d/bacula-web.conf'
+
+  f_backup_questions  # initial questions
+
+  SYSDOCROOT="/home/$SYSUSER/public_html"
+  SYSHTA="$SYSDOCROOT/.htaccess"
+  SYSCPHP="$SYSDOCROOT/application/config/config.php"
+
+  f_msg -d -p "Installing packages"
+  #...................
+
+  # generic
+  f_install man
+  f_install wget
+  f_install net-tools
+
+  # mysql
+  #f_install mariadb         # virtualmin already installed this
+  #f_install mariadb-server  # virtualmin already installed this
+
+  # bacula
+  f_install bacula-director
+  f_install bacula-storage
+  f_install bacula-console
+  f_install bacula-client
+
+  upsys -y
+
+  #f_msg -d -p "Adding firewall rules"
+  #...................
+  #f_run "firewall-cmd --permanent --add-port=9101-9103/tcp"
+  #f_run "firewall-cmd --reload"
+
+  # mysql_secure_installation
+  #...................
+  f_mysql_secure_install
+
+  f_msg -d -p "Creating Bacula database user and tables"
+  #...................
+  f_run "$BACULB/create_mysql_database -u root"
+  f_run "$BACULB/grant_mysql_privileges"
+  f_run -n "mysql -e \"UPDATE mysql.user SET Password=PASSWORD('$DBPW') WHERE User='$DBUSER'\""
+  f_run "mysql -e \"FLUSH PRIVILEGES\""
+  f_run "$BACULB/make_mysql_tables -u $DBUSER"
+
+  f_msg -d -p "Stopping Bacula services"
+  #...................
+  f_service stop bacula-dir
+  f_service stop bacula-fd
+  f_service stop bacula-sd
+
+  f_msg -d -p "Editing Bacula config"
+  #...................
+  f_run "setsebool -P httpd_can_network_connect on"  # allow apache through selinux
+
+  # editing Bacula files
+  #...................
+  f_sed_bacula $BACDIRCFG
+  f_sed_bacula $BACFDCFG
+  f_sed_bacula $BACSDCFG
+  f_sed_bacula $BACBCONCFG
+
+  # Setting Bacula to use MySQL (instead of postgresql)
+  #...................
+  MYSQLALT=`alternatives --display libbaccats.so |grep libbaccats-mysql |awk '{print $1}'`
+  f_msg -d "Alternative is: $MYSQLALT"
+  f_run "alternatives --set libbaccats.so $MYSQLALT"
+
+  f_msg -d -p "Starting Bacula services"
+  #...................
+  f_service restart httpd
+  f_service start bacula-dir
+  f_service start bacula-fd
+  f_service start bacula-sd
+
+  f_msg -p "Manual Steps"
+  #...................
+  read -p "
+ 1) Log in to Webmin: https://`hostname -i`:10000
+ 2) Navigate to 'Virtualmin' > 'System Settings' > 'Virtualmin Configuration'
+ 3)   Click 'Network settings'
+ 4)   For 'Network interface for virtual addresses', select 'Detect automatically'
+ 5)   Click 'Save'
+ 6) Navigate to 'Webmin' > 'Hardware' > 'System Time' > 'Change timezone'
+ 7)   Select the timezone you want to use
+ 8)   Click 'Save'
+ 9) Navigate to 'Webmin' > 'Un-used Modules' > 'Bacula Backup System'
+10)   Click on the 'module configuration' link when the following error displays:
+      'Failed to connect to the Bacula database...'
+11)   Expand 'Bacula database settings'
+12)   Enable 'MySQL'
+13)   Enter the db user & db password
+14)   Click 'Save'
+
+Press 'Enter' to continue.
+" ANSWER
+
+  f_msg -d -p "Restarting & enabling services"
+  #...................
+  f_service restart httpd
+  f_service restart mariadb
+  f_service restart bacula-dir
+  f_service restart bacula-fd
+  f_service restart bacula-sd
+
+  f_service enable httpd
+  f_service enable mariadb
+  f_service enable bacula-dir
+  f_service enable bacula-fd
+  f_service enable bacula-sd
+}
+
+# install bacula-web
+#---------------------------------------
+f_vbacula_web () {
+
+  # run bacula director install
+  f_vbacula_director
+
+  f_msg -p "Manual Steps"
+  #...................
+  read -p "
+1) Log in to Webmin: https://`hostname -i`:10000
+2) Navigate to 'Virtualmin'
+3)   Click 'Create Virtual Server'
+4)   Create the '$SYSUSER' user account and DB
+
+Press 'Enter' to continue.
+" ANSWER
+
+  f_msg -d -p "Installing packages"
+  #...................
+
+  # generic
+  f_install git
+  f_install curl
+  f_install curl-devel
+  f_install rsync
+  f_install composer
+
+  # php
+  f_install php
+  f_install php-gd
+  f_install php-gettext
+  f_install php-ldap
+  f_install php-mbstring
+  f_install php-mysql
+  f_install php-odbc
+  f_install php-pdo
+  f_install php-pear
+  f_install php-snmp
+  f_install php-soap
+  f_install php-xml
+  f_install php-xmlrpc
+
+  upsys -y
+
+  f_msg -d -p "Setting cli PHP version for $SYSUSER"
+  #...................
+  VLPVDIR=`virtualmin list-php-versions |grep bin |grep php |sort -n |tail -n1 |awk -F/ '{print "/"$2"/"$3}'`
+  LATESTPHP=`find $VLPVDIR -type f -name php`
+  LATESTPHPDIR=`echo $LATESTPHP |awk -Fbin '{print $1"bin"}'`
+
+  SEDFILE=/home/$SYSUSER/.bash_profile
+  SEDKEY='HOME'
+  SEDOLDVAL='PATH='
+  SEDNEWVAL="PATH=$LATESTPHPDIR:"
+  f_sedreplace
+
+  f_msg -d -p "Downloading Bacula web to document root"
+  #...................
+  f_run "cd /tmp ;git clone https://github.com/bacula-web/$BACGITREPO.git"
+  f_run "rsync -hav /tmp/$BACGITREPO/ $SYSDOCROOT/"
+  f_run "rm -rf /tmp/$BACGITREPO"
+  f_run "runuser -l $SYSUSER -c 'cd $SYSDOCROOT ;composer create-project --prefer-dist $BACGITREPO/$BACGITREPO $BACGITREPO'"
+  f_run "runuser -l $SYSUSER -c 'cd $SYSDOCROOT ;composer dump-autoload'"
+  f_run "runuser -l $SYSUSER -c 'cd $SYSDOCROOT ;composer install'"
+  f_run "chown -R $SYSUSER:$SYSUSER $SYSDOCROOT"
+
+  # set php.ini timezone
+  #...................
+  f_phpini_tzone
+
+  f_msg -d -p "Editing Apache config"
+  #...................
+
+  # edit .htaccess file
+  SEDFILE=$SYSHTA
+  SEDKEY='FollowSymLinks'
+  SEDOLDVAL='FollowSymLinks'
+  SEDNEWVAL='SymLinksIfOwnerMatch'
+  f_sedreplace
+
+  # create includes file (for security)
+  if [ ! -f $INCLUDECFG ] ;then
+    cat << EOF > $INCLUDECFG
+<Directory $SYSDOCROOT>
+  AllowOverride All
+</Directory>
+EOF
+    chmod 0644 $INCLUDECFG
+  fi
+
+  f_msg -d -p "Configuring Bacula config.php"
+  #...................
+  f_run "mv $SYSCPHP.sample $SYSCPHP"
+  if [ -f $SYSCPHP ] ;then
+    f_run "chmod 0600 $SYSCPHP"
+    cat << EOF >> $SYSCPHP
+//MySQL bacula catalog
+\$config[0]['label'] = 'Backup Server';
+\$config[0]['host'] = '`hostname -i`';
+\$config[0]['login'] = '$UIUSER';
+\$config[0]['password'] = '$UIPW';
+\$config[0]['db_name'] = '$DBUSER';
+\$config[0]['db_type'] = 'mysql';
+\$config[0]['db_port'] = '3306';
+
+// Enable debug mode
+//\$config['debug'] = true
+EOF
+  fi
+
+  f_msg -d -p "Restarting services"
+  #...................
+  f_service restart httpd
+
+  f_msg -p "Manual Steps"
+  #...................
+  read -p "
+ 1) Test Bacula-web by visiting:
+      http://`hostname -i`/index.php?page=test
+
+Press 'Enter' to continue.
+" ANSWER
+}
+
+# bacula-specific sed operations
+#---------------------------------------
+f_sed_bacula () {
+  f_run -n "sed -i 's/@@DIR_PASSWORD@@/$DBPW/g' $1"
+  f_run -n "sed -i 's/@@MON_DIR_PASSWORD@@/$DBPW/g' $1"
+  f_run -n "sed -i 's/@@FD_PASSWORD@@/$DBPW/g' $1"
+  f_run -n "sed -i 's/@@SD_PASSWORD@@/$DBPW/g' $1"
+  f_run -n "sed -i 's/dbpassword = \"\"/dbpassword = \"$DBPW\"/g' $1"
+  f_run "sed -i 's/Address = localhost/Address = `hostname -i`/g' $1"
+  f_run "sed -i 's/address = localhost/address = `hostname -i`/g' $1"
+}
+
+# install bacula client
+#---------------------------------------
+f_bacula_client () {
+  f_msg -e "No install method for this setup."
+}
+
+# install bareos server
+#---------------------------------------
+f_bareos_server () {
+
+  f_msg -d -p "Installing packages"
+  #...................
+
+  # epel
+  f_install epel-release
+  upsys -y
+
+  # generic
+  f_install man
+  f_install wget
+  f_install net-tools
+
+  # lamp
+  f_install httpd
+  f_install php
+  f_install php-cli
+  f_install php-common
+  f_install mariadb-server
+
+  # bareos
+  f_run "wget -O /etc/yum.repos.d/bareos.repo $BAREURI"
+  upsys -y
+  f_install bareos
+  f_install bareos-database-mysql
+  f_install bareos-webui
+  upsys -y
+
+  #f_msg -d -p "Adding firewall rules"
+  #...................
+  #f_run "firewall-cmd --permanent --add-port=9101-9103/tcp"
+  #f_run "firewall-cmd --reload"
+
+  # mysql_secure_installation
+  #...................
+  f_mysql_secure_install
+
+  f_msg -d -p "Creating BareOS database user and tables"
+  #...................
+  f_run "$BARESCRIPTS/create_bareos_database"
+  f_run "$BARESCRIPTS/make_bareos_tables"
+  f_run "$BARESCRIPTS/grant_bareos_privileges"
+
+  f_msg -d -p "Stopping BareOS services"
+  #...................
+  f_service stop bareos-dir
+  f_service stop bareos-sd
+  f_service stop bareos-fd
+
+  f_msg -d -p "Editing Bareos config"
+  #...................
+
+  # allow apache through selinux
+  f_run "setsebool -P httpd_can_network_connect on"
+
+  # create web UI user & password
+  f_run "mv $BAREADMINCFG.example $BAREADMINCFG"
+  f_run "chmod 0640 $BAREADMINCFG"
+  f_run "chown bareos:bareos $BAREADMINCFG"
+
+  # set web UI username
+  SEDFILE=$BAREADMINCFG
+  SEDKEY='Name'
+  SEDOLDVAL='Name = admin'
+  SEDNEWVAL="Name = $UIUSER"
+  f_sedreplace
+
+  # set web UI password
+  SEDFILE=$BAREADMINCFG
+  SEDKEY='Password'
+  SEDOLDVAL='Password = \"admin\"'
+  SEDNEWVAL="Password = \"$UIPW\""
+  f_sedreplace
+
+  # set DB password
+  SEDFILE=$BAREMYCAT
+  SEDKEY='dbpassword'
+  SEDOLDVAL='dbpassword = \"\"'
+  SEDNEWVAL="dbpassword = \"$DBPW\""
+  f_sedreplace
+
+  # edit bareos director ini
+  #$BAREDINI
+
+  f_msg -d -p "Starting BareOS services"
+  #...................
+  f_service restart httpd
+  f_service start bareos-dir
+  f_service start bareos-sd
+  f_service start bareos-fd
+  #f_run "bconsole"
+
+  f_msg -p "Manual Steps"
+  #...................
+  read -p "
+ 1) Test BareOS-web by visiting:
+      http://`hostname -i`/bareos-webui/
+
+Press 'Enter' to continue.
+" ANSWER
+
+  # set php.ini timezone
+  #...................
+  f_phpini_tzone
+
+  f_msg -d -p "Editing apache config"
+  #...................
+  SEDFILE=$INCLUDECFG
+  SEDKEY='FollowSymLinks'
+  SEDOLDVAL='FollowSymLinks'
+  SEDNEWVAL='SymLinksIfOwnerMatch'
+  f_sedreplace
+
+  f_msg -d -p "Restarting & enabling services"
+  #...................
+  f_service restart httpd
+  f_service restart mariadb
+  f_service restart bareos-dir
+  f_service restart bareos-fd
+  f_service restart bareos-sd
+
+  f_service enable httpd
+  f_service enable mariadb
+  f_service enable bareos-dir
+  f_service enable bareos-fd
+  f_service enable bareos-sd
+
+  f_msg -p "Manual Steps"
+  #...................
+  read -p "
+ 1) Test BareOS-web by visiting:
+      http://`hostname -i`/bareos-webui/
+
+Press 'Enter' to continue.
+" ANSWER
+}
+
+# install bareos server
+#---------------------------------------
+f_vbareos_server () {
+  f_virtualmin  # install virtualmin
+
+  f_msg -p "Setting initial, custom variables"
+  #...................
+  DBUSER='bareos'
+  INCLUDECFG='/etc/httpd/conf.d/bareos-webui.conf'
+
+  f_backup_questions  # initial questions
+
+  SYSDOCROOT="/home/$SYSUSER/public_html"
+  SYSHTA="$SYSDOCROOT/.htaccess"
+  SYSCPHP="$SYSDOCROOT/application/config/config.php"
+
+  f_msg -d -p "Installing packages"
+  #...................
+
+  # generic
+  f_install man
+  f_install wget
+  f_install net-tools
+
+  # lamp
+  #f_install httpd
+  #f_install php
+  #f_install php-cli
+  #f_install php-common
+  #f_install mariadb-server
+
+  # bareos
+  f_run "wget -O /etc/yum.repos.d/bareos.repo $BAREURI"
+  upsys -y
+  f_install bareos
+  f_install bareos-database-mysql
+  f_install bareos-webui
+
+  upsys -y
+
+  f_msg -d -p "Adding firewall rules"
+  #...................
+  f_run "firewall-cmd --permanent --add-port=9101-9103/tcp"
+  f_run "firewall-cmd --reload"
+
+  # mysql_secure_installation
+  #...................
+  f_mysql_secure_install
+
+  f_msg -d -p "Creating BareOS database user and tables"
+  #...................
+  f_run "$BARESCRIPTS/create_bareos_database"
+  f_run "$BARESCRIPTS/make_bareos_tables"
+  f_run "$BARESCRIPTS/grant_bareos_privileges"
+  f_run -n "mysql -e \"UPDATE mysql.user SET Password=PASSWORD('$DBPW') WHERE User='$DBUSER'\""
+  f_run "mysql -e \"FLUSH PRIVILEGES\""
+
+  f_msg -d -p "Stopping BareOS services"
+  #...................
+  f_service stop bareos-dir
+  f_service stop bareos-sd
+  f_service stop bareos-fd
+
+  f_msg -d -p "Editing Bareos config"
+  #...................
+
+  # allow apache through selinux
+  f_run "setsebool -P httpd_can_network_connect on"
+
+  # create web UI user & password
+  f_run "mv $BAREADMINCFG.example $BAREADMINCFG"
+  f_run "chmod 0640 $BAREADMINCFG"
+  f_run "chown bareos:bareos $BAREADMINCFG"
+
+  # set web UI username
+  SEDFILE=$BAREADMINCFG
+  SEDKEY='Name'
+  SEDOLDVAL='Name = admin'
+  SEDNEWVAL="Name = $UIUSER"
+  f_sedreplace
+
+  # set web UI password
+  SEDFILE=$BAREADMINCFG
+  SEDKEY='Password'
+  SEDOLDVAL='Password = \"admin\"'
+  SEDNEWVAL="Password = \"$UIPW\""
+  f_sedreplace
+
+  # set DB password
+  SEDFILE=$BAREMYCAT
+  SEDKEY='dbpassword'
+  SEDOLDVAL='dbpassword = \"\"'
+  SEDNEWVAL="dbpassword = \"$DBPW\""
+  f_sedreplace
+
+  # edit bareos director ini
+  #$BAREDINI
+
+  f_msg -d -p "Starting BareOS services"
+  #...................
+  f_service restart httpd
+  f_service start bareos-dir
+  f_service start bareos-sd
+  f_service start bareos-fd
+  #f_run "bconsole"
+
+  f_msg -p "Manual Steps"
+  #...................
+  read -p "
+ 1)  Log in to Webmin: https://`hostname -i`:10000
+ 2)  Navigate to 'Webmin' > 'Hardware' > 'System Time' > 'Change timezone'
+ 3)    Select the timezone you want to use
+ 4)    Click 'Save'
+ 5)  Navigate to 'Webmin' > 'Servers' > 'MySQL Database Server'
+ 6)    Click 'Change Administration Password'
+ 7)    Ensure the MySQL root password is correct
+ 8)  Navigate to 'Virtualmin' > 'System Settings' > 'Virtualmin Configuration'
+ 9)    Click 'Network settings'
+10)    For 'Network interface for virtual addresses', select 'Detect automatically'
+11)    Click 'Save'
+12)  Navigate to 'Virtualmin'
+13)    Click 'Create Virtual Server'
+14)    Create the '$SYSUSER' user account
+
+Press 'Enter' to continue.
+" ANSWER
+
+  f_msg -d -p "Implementing VirtualMin-specific settings"
+  #...................
+
+  # Setting cli PHP version for system user
+  VLPVDIR=`virtualmin list-php-versions |grep bin |grep php |sort -n |tail -n1 |awk -F/ '{print "/"$2"/"$3}'`
+  LATESTPHP=`find $VLPVDIR -type f -name php`
+  LATESTPHPDIR=`echo $LATESTPHP |awk -Fbin '{print $1"bin"}'`
+
+  SEDFILE=/home/$SYSUSER/.bash_profile
+  SEDKEY='HOME'
+  SEDOLDVAL='PATH='
+  SEDNEWVAL="PATH=$LATESTPHPDIR:"
+  f_sedreplace
+
+  # Moving BareOS web content to document root
+  f_run "rsync -hav $BAREUSBW/ /home/$SYSUSER/"
+  f_run "mv /home/$SYSUSER/public/* /home/$SYSUSER/public_html/"
+  f_run "rmdir /home/$SYSUSER/public"
+  f_run "chown -R $SYSUSER:$SYSUSER /home/$SYSUSER/"
+
+  # edit apache config
+  f_run "sed -i \"s~$BAREDOCROOT~$SYSDOCROOT~g\" $INCLUDECFG"
+
+  # set php.ini timezone
+  #...................
+  f_phpini_tzone
+
+  f_msg -d -p "Editing apache config"
+  #...................
+  SEDFILE=$INCLUDECFG
+  SEDKEY='FollowSymLinks'
+  SEDOLDVAL='FollowSymLinks'
+  SEDNEWVAL='SymLinksIfOwnerMatch'
+  f_sedreplace
+
+  f_msg -d -p "Restarting & enabling services"
+  #...................
+  f_service restart httpd
+  f_service restart mariadb
+  f_service restart bareos-dir
+  f_service restart bareos-fd
+  f_service restart bareos-sd
+
+  f_service enable httpd
+  f_service enable mariadb
+  f_service enable bareos-dir
+  f_service enable bareos-fd
+  f_service enable bareos-sd
+
+  f_msg -p "Manual Steps"
+  #...................
+  f_msg "
+ 1) Test BareOS-web by visiting:
+      https://`hostname -i`/
+      username: $UIUSER
+
+Press 'Enter' to continue."
+}
+
+# configure MySQL/MariaDB
+#---------------------------------------
+f_mysql_secure_install () {
+  f_msg -d -p "Configuring MySQL/MariaDB"
+  f_service start mariadb
+  f_run "mysql_secure_installation"
+  read -sp "Enter current password for root again: " RDBPW ;echo
+  if [ ! -f $RMYCNF ] ;then
+    f_run -n "echo \"[mysql]
+user=root
+password='$RDBPW'\" > $RMYCNF"
+    f_run "chmod 0600 $RMYCNF"
+  fi
+}
+
+# backup server questions
+#---------------------------------------
+f_backup_questions () {
+
+f_msg "Initial questions"
+#...................
+read -p "Enter username for system: " SYSUSER ;echo
+read -sp "Enter password for DB user ($DBUSER): " DBPW ;echo ;echo
+read -p "Enter username for web UI: " UIUSER
+read -sp "Enter password for web UI user ($UIUSER): " UIPW ;echo
+}
+
+# set php.ini timezone
+#---------------------------------------
+f_phpini_tzone () {
+
+  f_msg -d -p "Setting correct php.ini time zone"
+  #...................
+  CURTZONE=`timedatectl |grep Time\ zone |awk '{print $3}'`
+  sed -i "s~;date.timezone =~date.timezone = $CURTZONE ~g" /etc/php.ini
+}
+
+# script start
+#===============================================================================
+
+# preset variables (optional)
+#---------------------------------------
+VERBOSE=true
+SKIP=true
+
+# process options
+#---------------------------------------
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    "")  break  ;;
+    *)   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+# arguments
+#---------------------------------------
+f_arguments
+
+# error checks
+#---------------------------------------
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+# body
+#===============================================================================
+
+# add source path
+#---------------------------------------
+#f_addpath /usr/local/sbin
+
+# prompt for type of install
+#---------------------------------------
+read -p "
+ 1  puppet server
+ 2  puppet agent (new node setup)
+ 3  openldap server [broken]
+ 4  phpldapadmin [broken]
+ 5  freeipa server
+ 6  freeipa client (new node setup) [incomplete]
+ 7  virtualmin
+ 8  bacula director (server/master) on virtualmin
+ 9  bacula-web on virtualmin [broken]
+10  bacula client [incomplete]
+11  bareos server
+12  bareos server on virtualmin
+
+What do you want to install?
+[1-10, (q)uit]: " ANSWER
+
+case $ANSWER in
+   1)  f_puppet_master  ;;
+   2)  f_puppet_agent  ;;
+   3)  f_openldap  ;;
+   4)  f_phpldapadmin ;;
+   5)  f_freeipa_server ;;
+   6)  f_freeipa_client ;;
+   7)  f_virtualmin ;;
+   8)  f_vbacula_director ;;
+   9)  f_vbacula_web ;;
+  10)  f_bacula_client ;;
+  11)  f_bareos_server ;;
+  12)  f_vbareos_server ;;
+  'q'|'quit')  f_exit  ;;
+  *)  f_msg -e "invalid selection"  ;;
+esac
+
+# cleanup
+#===============================================================================
+f_logro  # rotate log
+f_exit   # exit script

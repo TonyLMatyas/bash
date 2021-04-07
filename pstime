@@ -1,0 +1,98 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script check the running time of a given process.
+
+SYNTAX:
+  # $PROG [OPTIONS] <process_name>
+
+$HELP_TXT_OPTIONS
+
+EXAMPLES:
+  Normal operation:  # $PROG sshd
+  Dry run:           # $PROG -vv -dr vsftpd
+  Logging:           # $PROG -v --log httpd
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+#
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+SKIP=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    "")  f_msg -e "You need to provide an argument." ;break  ;;
+    *)   PROCESS=$1 ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+
+#---------------------------------------
+# error checks
+
+#f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# check process run time
+
+f_msg "Checking the run time for $PROCESS ..."
+f_run "ps -eo pid,etime,cmd |grep -v '`which $PROG`' |grep -v 'grep $PROCESS' |grep -e '$PROCESS' -e 'ELAPSED' |grep -v ' -e ELAPSED'"
+
+#===============================================================================
+# cleanup
+
+#---------------------------------------
+# rotate log
+
+f_logro
+
+#...................
+# exit
+
+f_exit

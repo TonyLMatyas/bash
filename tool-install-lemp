@@ -1,0 +1,336 @@
+#!/bin/bash
+
+# variables
+################################################################################
+TMPDIR=`mktemp -d`
+
+# help text
+########################################
+HELPTXT="
+This scripts organizes files in a specified folder by date.
+
+OPTIONS:
+  -h, --help                        View this help text
+  -i, --install                     Install LEMP
+  -ip, --info-php                   Create 'info.php' file in document root (insecure)
+  -w, --website <domain.com>        Configure <domain.com>
+  -u, --user <username>             Override default <domain.com> system user
+  -sk, --ssl-key <SSLcertificate>   Define path to SSL key file
+  -sc, --ssl-cert <SSLcertificate>  Define path to SSL certificate file
+"
+
+# library
+################################################################################
+
+# help
+########################################
+f_help () { echo "$HELPTXT" ;echo "$MSG" ;echo ;exit ; }
+
+# error
+########################################
+f_err () { MSG="!!! ERROR !!! $1" ;f_help ; }
+
+# dry run
+########################################
+f_dry () {
+  if [[ $DRYRUN == 'true' ]] ;then echo "Dry Run: $1"
+  else echo "Live Run: $1" ;eval "$1" ;fi ; }
+
+# message
+########################################
+f_mess () {
+  echo ;echo "MESSAGE: $1 ..." ; }
+
+# functions
+################################################################################
+
+# content
+########################################
+f_content () {
+  f_mess "reading in content"
+
+  # scl
+  REPOSCLO='# CentOS-SCLo-sclo.repo
+#   Please see http://wiki.centos.org/SpecialInterestGroup/SCLo for more
+#   information
+
+[centos-sclo-sclo]
+name=CentOS-7 - SCLo sclo
+# baseurl=http://mirror.centos.org/centos/7/sclo/$basearch/sclo/
+mirrorlist=http://mirrorlist.centos.org?arch=$basearch&release=7&repo=sclo-sclo
+gpgcheck=1
+enabled=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo
+
+[centos-sclo-sclo-testing]
+name=CentOS-7 - SCLo sclo Testing
+baseurl=http://buildlogs.centos.org/centos/7/sclo/$basearch/sclo/
+gpgcheck=0
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo
+
+[centos-sclo-sclo-source]
+name=CentOS-7 - SCLo sclo Sources
+baseurl=http://vault.centos.org/centos/7/sclo/Source/sclo/
+gpgcheck=1
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo
+
+[centos-sclo-sclo-debuginfo]
+name=CentOS-7 - SCLo sclo Debuginfo
+baseurl=http://debuginfo.centos.org/centos/7/sclo/$basearch/
+gpgcheck=1
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo'
+
+  # scl rh
+  REPOSCLORH='# CentOS-SCLo-rh.repo
+#   Please see http://wiki.centos.org/SpecialInterestGroup/SCLo for more
+#   information
+
+[centos-sclo-rh]
+name=CentOS-7 - SCLo rh
+#baseurl=http://mirror.centos.org/centos/7/sclo/$basearch/rh/
+mirrorlist=http://mirrorlist.centos.org?arch=$basearch&release=7&repo=sclo-rh
+gpgcheck=1
+enabled=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo
+
+[centos-sclo-rh-testing]
+name=CentOS-7 - SCLo rh Testing
+baseurl=http://buildlogs.centos.org/centos/7/sclo/$basearch/rh/
+gpgcheck=0
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo
+
+[centos-sclo-rh-source]
+name=CentOS-7 - SCLo rh Sources
+baseurl=http://vault.centos.org/centos/7/sclo/Source/rh/
+gpgcheck=1
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo
+
+[centos-sclo-rh-debuginfo]
+name=CentOS-7 - SCLo rh Debuginfo
+baseurl=http://debuginfo.centos.org/centos/7/sclo/$basearch/
+gpgcheck=1
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo'
+
+  REPOSCLOGPG='-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+mQENBFYM/AoBCADR9Q5cb+H5ndx+QkzNBQ88wcD+g112yvnHNlSiBMOnNEGHuKPJ
+tujZ+eWXP3K6ucJckT91WxfQ2fxPr9jQ0xpZytcHcZdTfn3vKL9+OwR0npp+qmcz
+rK8/EzVz/SWSgBQ5xT/HUvaeoVAbzBHSng0r2njnBAqABKAoTxgyRGKSCWduKD32
+7PF2ZpqeDFFhd99Ykt6ar8SlV8ToqH6F7An0ILeejINVbHUxd6+wsbpcOwQ4mGAa
+/CPXeqqLGj62ASBv36xQr34hlN/9zQMViaKkacl8zkuvwhuHf4b4VlGVCe6VILpQ
+8ytKMV/lcg7YpMfRq4KVWBjCwkvk6zg6KxaHABEBAAG0aENlbnRPUyBTb2Z0d2Fy
+ZUNvbGxlY3Rpb25zIFNJRyAoaHR0cHM6Ly93aWtpLmNlbnRvcy5vcmcvU3BlY2lh
+bEludGVyZXN0R3JvdXAvU0NMbykgPHNlY3VyaXR5QGNlbnRvcy5vcmc+iQE5BBMB
+AgAjBQJWDPwKAhsDBwsJCAcDAgEGFQgCCQoLBBYCAwECHgECF4AACgkQTrhOcfLu
+nVXNewgAg7RVclomjTY4w80XiztUuUaFlCHyR76KazdaGfx/8XckWH2GdQtwii+3
+Tg7+PT2H0Xyuj1aod+jVTPXTPVUr+rEHAjuNDY+xyAJrNljoOHiz111zs9pk7PLX
+CPwKWQLnmrcKIi8v/51L79FFsUMvhClTBdLUQ51lkCwbcXQi+bOhPvZTVbRhjoB/
+a9z0d8t65X16zEzE7fBhnVoj4xye/MPMbTH41Mv+FWVciBTuAepOLmgJ9oxODliv
+rgZa28IEWkvHQ8m9GLJ0y9mI6olh0cGFybnd5y4Ss1cMttlRGR4qthLhN2gHZpO9
+2y4WgkeVXCj1BK1fzVrDMLPbuNNCZQ==
+=UtPD
+-----END PGP PUBLIC KEY BLOCK-----'
+
+  NGINXCONFCONTENT="server {
+  server_name $WEBSITE www.$WEBSITE;
+  listen `hostname -i`;
+  root $DOCROOT;
+  index index.html index.htm index.php;
+  access_log /var/log/nginx/${WEBSITE}_access_log;
+  error_log /var/log/nginx/${WEBSITE}_error_log;
+  fastcgi_param GATEWAY_INTERFACE CGI/1.1;
+  fastcgi_param SERVER_SOFTWARE nginx;
+  fastcgi_param QUERY_STRING \$query_string;
+  fastcgi_param REQUEST_METHOD \$request_method;
+  fastcgi_param CONTENT_TYPE \$content_type;
+  fastcgi_param CONTENT_LENGTH \$content_length;
+  fastcgi_param SCRIPT_FILENAME $DOCROOT\$fastcgi_script_name;
+  fastcgi_param SCRIPT_NAME \$fastcgi_script_name;
+  fastcgi_param REQUEST_URI \$request_uri;
+  fastcgi_param DOCUMENT_URI \$document_uri;
+  fastcgi_param DOCUMENT_ROOT $DOCROOT;
+  fastcgi_param SERVER_PROTOCOL \$server_protocol;
+  fastcgi_param REMOTE_ADDR \$remote_addr;
+  fastcgi_param REMOTE_PORT \$remote_port;
+  fastcgi_param SERVER_ADDR \$server_addr;
+  fastcgi_param SERVER_PORT \$server_port;
+  fastcgi_param SERVER_NAME \$server_name;
+  fastcgi_param HTTPS \$https;
+  location ~ \.php$ {
+    try_files \$uri =404;
+    fastcgi_pass unix:$PHPSOCKETFILE;
+  }
+  listen `hostname -i`:443 default ssl;
+  ssl_certificate $SSLCRTDST;
+  ssl_certificate_key $SSLKEYDST;
+}"
+}
+
+# install services
+########################################
+f_install () {
+
+  f_mess "installing services"
+
+  f_mess "installing preliminaries"
+  yum -y install epel-release
+  yum -y update ;yum -y upgrade ;yum -y clean all
+  yum -y install less vim which rsync yum-utils
+
+  f_mess "installing mariadb"
+  yum -y install mariadb mariadb-server
+  systemctl enable mariadb ;systemctl start mariadb
+
+  f_mess "running automated mysql_secure_installation"
+  mysqladmin -u root password "$ROOTDBPASS"
+  mysql -u root -p"$ROOTDBPASS" -e "UPDATE mysql.user SET Password=PASSWORD('$ROOTDBPASS') WHERE User='root'"
+  mysql -u root -p"$ROOTDBPASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"
+  mysql -u root -p"$ROOTDBPASS" -e "DELETE FROM mysql.user WHERE User=''"
+  mysql -u root -p"$ROOTDBPASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%'"
+  mysql -u root -p"$ROOTDBPASS" -e "FLUSH PRIVILEGES"
+
+  MYCNF="/root/.my.cnf"
+  f_mess "initializing $MYCNF"
+  echo "[mysql]
+user=root
+password=$ROOTDBPASS" > /root/.my.cnf
+  chmod 0600 $MYCNF
+
+  f_mess "installing nginx"
+  yum -y install nginx
+  systemctl enable nginx ;systemctl start nginx
+
+  f_mess "installing php-fpm"
+  echo "$REPOSCLO" > /etc/yum.repos.d/CentOS-SCLo-scl.repo
+  echo "$REPOSCLORH" > /etc/yum.repos.d/CentOS-SCLo-scl-rh.repo
+  echo "$REPOSCLOGPG" > /etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-SCLo
+  chmod 0644 /etc/yum.repos.d/CentOS-SCL*repo /etc/pki/rpm-gpg/*SCLo
+  yum -y install rh-php72 rh-php72-php-{mysqlnd,fpm,bcmath,devel,gd,mbstring,opcache,pspell,xmlrpc}
+  PHP72OPT='/opt/rh/rh-php72' ;PHP72ETC="/etc$PHP72OPT"
+  cd /usr/lib/systemd/system ;ln -s rh-php72-php-fpm.service php-fpm.service
+  cd /var/lib ;ln -s `find $PHP72OPT -type d -name php |grep '/lib/'` ./
+  cd /etc
+    ln -s `find $PHP72ETC -type d -name php.d` ./
+    ln -s `find $PHP72ETC -type d -name php-fpm.d` ./
+    ln -s `find $PHP72ETC -type f -name php.ini` ./
+    ln -s `find $PHP72ETC -type f -name php-fpm.conf` ./
+  echo "source `find $PHP72ETC -type f -name enable`" >> /etc/bashrc
+  echo "source `find $PHP72ETC -type f -name enable`" >> /etc/profile
+  systemctl enable php-fpm ;systemctl start php-fpm
+}
+
+# configure website
+########################################
+f_website () {
+
+  f_mess "configuring user space"
+  TLD=`echo $WEBSITE |awk -F'.' '{print $NF}'`
+  DOMAIN=`echo $WEBSITE |awk -F".$TLD" '{print $1}'`
+  if [[ -z $WEBUSER ]] ;then WEBUSER=`echo $DOMAIN |awk -F'.' '{print $NF}'` ;fi
+  adduser $WEBUSER
+  mkdir -p /home/$WEBUSER/{cgi-bin,homes,logs,public_html,tmp}
+  find /home/$WEBUSER -type d -exec chmod 0750 '{}' \;
+
+  f_mess "creating database for $WEBSITE"
+  mysql -e "create database $WEBUSER"
+  mysql -e "create user '$WEBUSER'@'localhost' identified by '$USERDBPASS'"
+  mysql -e "grant all privileges on ${WEBUSER}.* to '$WEBUSER'@'localhost'"
+
+  MYCNF="/home/$WEBUSER/.my.cnf"
+  f_mess "initializing $MYCNF"
+  echo "[mysql]
+user=$WEBUSER
+password=$USERDBPASS" > $MYCNF
+  chmod 0600 $MYCNF
+
+  f_mess "configuring nginx"
+  DOCROOT="/home/$WEBUSER/public_html"
+  SSLCRTDST="/home/$WEBUSER/ssl.cert" ;cp -af $SSLCRTSRC $SSLCRTDST
+  SSLKEYDST="/home/$WEBUSER/ssl.key" ;cp -af $SSLKEYSRC $SSLKEYDST
+  NGINXCONFSITE="/etc/nginx/conf.d/www.${WEBSITE}.conf"
+  PHPSOCKETDIR="/var/php-nginx/${WEBSITE}.sock"
+  PHPSOCKETFILE="$PHPSOCKETDIR/socket"
+  f_content
+  usermod nginx -G $WEBUSER -a
+  chmod 0770 $SSLCRTDST $SSLKEYDST
+  echo "$NGINXCONFCONTENT" > $NGINXCONFSITE
+
+  f_mess "configuring php-fpm"
+  mkdir -p "/home/$WEBUSER/etc/7.2"
+  if [[ ! -d $PHPSOCKETDIR ]] ;then mkdir -p $PHPSOCKETDIR ;fi
+  chown nginx:$WEBUSER $PHPSOCKETDIR ;chmod 0770 $PHPSOCKETDIR
+  cp -a /var/lib/mysql/mysql.sock $PHPSOCKETFILE
+  chown nginx:$WEBUSER $PHPSOCKETFILE ;chmod 0770 $PHPSOCKETFILE
+  WWWCONF='/etc/php-fpm.d/www.conf'
+    sed -i "s~listen = 127.0.0.1:9000~listen = $PHPSOCKETFILE~g" $WWWCONF
+    sed -i 's/apache/nginx/g' $WWWCONF
+    sed -i 's/nobody/nginx/g' $WWWCONF
+    sed -i 's/;listen.owner =/listen.owner =/g' $WWWCONF
+    sed -i 's/;listen.group =/listen.group =/g' $WWWCONF
+    sed -i 's/;listen.mode =/listen.mode =/g' $WWWCONF
+  sed -i 's/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/g' `find $PHP72ETC -name php.ini`  # for security
+  find /var/lib/php -user apache -exec chown nginx '{}' \;
+  find /var/lib/php -group apache -exec chown :nginx '{}' \;
+
+  f_mess "creating $DOCROOT/info.php"
+  if [[ $INFOPHP == 'true' ]] ;then
+    echo '<?php
+  phpinfo();' > $DOCROOT/info.php ;fi
+
+  f_mess "installing wordpress"
+  WPZIP='latest.tar.gz'
+  cd $DOCROOT ;curl -O https://wordpress.org/$WPZIP ;tar xzfv $WPZIP ;rm -f $WPZIP
+  mv wordpress/* ./ ;rmdir wordpress
+  find $DOCROOT -type d -exec chmod 0750 '{}' \;
+  find $DOCROOT -type f -exec chmod 0640 '{}' \;
+  chown -R $WEBUSER: /home/$WEBUSER
+  chmod 0770 $DOCROOT
+}
+
+# script start
+################################################################################
+
+# create flags
+########################################
+if [[ "$#" < 1 ]] ;then f_help ;fi
+while (( "$#" > 0 )) ;do
+  case $1 in
+    '-h'|'--help')  f_help  ;;
+    '-i'|'--install')  INSTALL='true' ;shift ;;
+    '-ip'|'--info-php')  INFOPHP='true' ;shift ;;
+    '-dr'|'--dry-run')  DRYRUN='true' ;shift ;;
+    '-w'|'--website')  WEBSITE="$2" ;shift 2 ;;
+    '-u'|'--user')  WEBUSER="$2" ;shift 2 ;;
+    '-sc'|'--ssl-cert')  SSLCRTSRC="$2" ;shift 2 ;;
+    '-sk'|'--ssl-key')  SSLKEYSRC="$2" ;shift 2 ;;
+    *)  f_err "Invalid argument: $1"  ;;
+  esac
+done
+
+# error checks
+########################################
+
+if [[ `whoami` != 'root' ]] ;then f_err "You need to be 'root'" ;fi
+
+# process flags
+########################################
+f_content
+
+if [[ $INSTALL == 'true' ]] ;then
+  read -sp "Enter desired password for root database user: " ROOTDBPASS ;echo ;fi
+if [[ ! -z $WEBSITE ]] ;then
+  read -sp "Enter desired password for $WEBUSER database user: " USERDBPASS ;echo ;fi
+
+if [[ $INSTALL == 'true' ]] ;then
+  f_install ;fi
+if [[ ! -z $WEBSITE ]] ;then
+  f_website ;fi
+
+systemctl restart mariadb ;systemctl restart nginx ;systemctl restart php-fpm

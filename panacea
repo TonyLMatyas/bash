@@ -1,0 +1,296 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+
+#---------------------------------------
+# initialize values
+
+PERMS=false
+PROXU=false
+PROXL=false
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script runs various fixes or cleanup processes.
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+$HELP_TXT_OPTIONS
+
+FIXES:
+  --perms               fix various permissions
+  -rp, --reset-paths    reset paths to PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+EXAMPLES:
+  Normal operation:  # $PROG --perms
+  Dry run:           # $PROG -vv -dr --reset-paths
+  Logging:           # $PROG -v --log --perms
+
+$HELP_TXT_NOTES
+
+"
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+# chmod file & directory defaults
+
+f_chmod () {
+if [ -d $1 ] ;then
+  f_msg "Chmodding directories in $1 ..."
+  f_msg -d "DIRMODE=$DIRMODE"
+  f_run "find $1 -type d -exec chmod $DIRMODE {} \;"
+  f_msg "Chmodding files in $1 ..."
+  f_msg -d "FILEMODE=$FILEMODE"
+  f_run "find $1 -type f -exec chmod $FILEMODE {} \;"
+else
+  f_msg -w "directory does not exist; skipping $1 ..."
+fi
+}
+
+#---------------------------------------
+# chown a directory
+
+f_chown () {
+if [ -d $1 ] ;then
+  f_msg "Chowning everything in $1 ..."
+  f_msg -d "USER=$USER"
+  f_msg -d "GROUP=$GROUP"
+  f_run "chown -R $USER:$GROUP $1"
+else
+  f_msg -w -d "directory does not exist; skipping $1 ..."
+fi
+}
+
+#---------------------------------------
+# fix permissions: home dirs
+
+# fix mode: .ssh dirs
+f_fixsshdir () {
+SSHDIR=$HOMEDIR/.ssh
+DIRMODE=750 ;FILEMODE=600
+f_chmod $SSHDIR
+}
+
+# fix permissions: home dirs
+f_fixhomedirs () {
+f_msg "PERMS: fixing home directories ..."
+if [ $OS == linux ] ;then
+  for LINE in `grep /bin/bash /etc/passwd |grep -v nologin$ |grep -v false$ |grep -v ^root` ;do
+    USER=`echo $LINE |awk -F: '{print $1}'`
+    GROUP=$USER
+    HOMEDIR=`echo $LINE |awk -F: '{print $6}'`
+    f_chown $HOMEDIR
+    f_fixsshdir
+  done
+  ROOTDIR=/root
+elif [ $OS == mac ] ;then
+  for LINE in `ls -ald /Users/*/Desktop |awk '{print $3}'` ;do
+    USER=$LINE
+    GROUP=`ls -ald /Users/$USER |awk '{print $4}'`
+    HOMEDIR=/Users/$USER
+    f_chown $HOMEDIR
+    f_fixsshdir
+  done
+  ROOTDIR=/var/root
+fi
+
+f_msg "PERMS: fixing root directory ..."
+# fix ownership: root directory
+USER=`ls -ald $ROOTDIR |awk '{print $3}'`
+GROUP=`ls -ald $ROOTDIR |awk '{print $4}'`
+f_chown $ROOTDIR
+# fix mode: root directory
+DIRMODE=750 ;FILEMODE=640  # default permissions
+f_chmod $ROOTDIR
+HOMEDIR=$ROOTDIR
+f_fixsshdir
+}
+
+#---------------------------------------
+# fix permissions: /usr/local/sbin/
+
+f_fix_sbin () {
+WORKDIR=/usr/local/sbin
+f_msg "PERMS: fixing $WORKDIR ..."
+
+# fix ownership
+USER=root
+if [ $OS == mac ] ;then
+  GROUP=admin
+else
+  GROUP=scripts
+fi
+f_chown $WORKDIR
+
+# fix mode
+DIRMODE=750 ;FILEMODE=770
+f_chmod $WORKDIR
+
+# fix mode: exceptions
+ELIST='README.md
+_config.yml
+zellib
+template.sh'
+for TLIST in `echo $ELIST` ;do
+  f_run "chmod 0640 $WORKDIR/$TLIST"
+done
+}
+
+#---------------------------------------
+# fix permissions: /j-scripts
+
+f_fix_jscripts () {
+WORKDIR=/j-scripts
+f_msg "PERMS: fixing $WORKDIR ..."
+
+# fix ownership
+USER=root
+if [ $OS == mac ] ;then
+  GROUP=admin
+else
+  GROUP=scripts
+fi
+f_chown $WORKDIR
+
+# fix mode
+DIRMODE=770 ;FILEMODE=770
+f_chmod $WORKDIR
+}
+
+#---------------------------------------
+# fix permissions: puppet dir
+
+f_fixpupdir () {
+PDIR=/etc/puppet
+f_msg "PERMS: fixing $PDIR ..."
+
+# fix ownership
+USER=root
+GROUP=puppet
+f_chown $PDIR
+
+# fix mode
+DIRMODE=750 ;FILEMODE=640  # default permissions
+f_chmod $PDIR
+}
+
+#---------------------------------------
+# fix permissions: nagios dir
+
+f_fixnagiosdir () {
+NDIR=/etc/nagios
+f_msg "PERMS: fixing $NDIR ..."
+
+# fix ownership
+USER=root
+GROUP=nagios
+f_chown $NDIR
+
+# fix mode
+DIRMODE=750 ;FILEMODE=640  # default permissions
+f_chmod $NDIR
+
+# custom permissions
+GROUP=apache
+NPWD=$NDIR/passwd
+if [ -f $NPWD ] ;then
+  f_msg -d "fixing apache file: $NPWD ..."
+  f_run "chown $USER:$GROUP $NPWD"
+fi
+}
+
+#---------------------------------------
+# fix permissions: all
+
+f_fixperms () {
+f_fixhomedirs
+f_fix_sbin
+f_fix_jscripts
+f_fixpupdir
+f_fixnagiosdir
+}
+
+#---------------------------------------
+# reset PATH environment variable
+
+f_reset_paths () {
+f_run "sed -i '/^PATH=\//d' $BASHRC"
+f_run "echo 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' >> $BASHRC"
+}
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+SKIP=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    --perms)                PERMS=true ;shift  ;;
+    '-rp'|'--reset-paths')  RPATHS=true ;shift  ;;
+    "")                     break  ;;
+    *)                      f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+f_msg -d "PERMS=$PERMS"
+
+#---------------------------------------
+# error checks
+
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# filter options
+
+if [[ $PERMS == true ]] ;then
+  f_fixperms ;RAN=true
+fi
+if [[ $RPATHS == true ]] ;then
+  f_reset_paths ;RAN=true
+fi
+if [[ $RAN == false ]] ;then
+  f_msg -e "No fixes have been defined."
+fi
+
+#===============================================================================
+# cleanup
+
+f_logro  # rotate log
+f_exit   # exit script

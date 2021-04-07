@@ -1,0 +1,202 @@
+#!/bin/bash
+# created by: Zell
+#===============================================================================
+# variables
+
+#---------------------------------------
+# source file
+
+source /usr/local/sbin/zellib
+
+#---------------------------------------
+# custom values
+
+
+#===============================================================================
+# help text
+
+HELP_TXT="
+This script checks for correct syntax for various config files.
+
+SYNTAX:
+  # $PROG [OPTIONS]
+
+  $HELP_TXT_OPTIONS
+  --all              check all configs (default if no config specified)
+  -a, --apache       check apache config
+  -n, --nagios       check nagios config
+  -o, --omd          check omd config
+  -p, --puppet       check puppet site.pp
+  -hap, --haproxy    check haproxy config
+
+  $HELP_TXT_EXAMPLES
+
+  $HELP_TXT_NOTES
+
+  "
+
+#===============================================================================
+# functions
+
+#---------------------------------------
+# check messages
+
+f_check () {
+SKIP=false
+if [[ -f $CFILE ]] ;then
+  f_msg "Checking $CFILE ..."
+else
+  f_msg -w "Skipping check because file does not exist: $CFILE"
+  SKIP=true
+fi
+}
+
+#---------------------------------------
+# check apache config
+
+f_apache () {
+DIR=/etc/httpd/conf
+
+CFILE=$DIR/httpd.conf
+f_check
+if [[ $SKIP != true ]] ;then
+  f_run "httpd -t -f $CFILE"
+fi
+}
+
+#---------------------------------------
+# check nagios config
+
+f_nagios () {
+DIR=/etc/nagios
+
+CFILE=$DIR/nagios.cfg
+f_check
+if [[ $SKIP != true ]] ;then
+  f_run "nagios -v $CFILE"
+fi
+}
+
+#---------------------------------------
+# check omd config
+
+f_omd () {
+DIR=/omd/sites/`whoami`/etc/nagios
+
+CFILE=$DIR/nagios.cfg
+f_check
+if [[ $SKIP != true ]] ;then
+  f_run "nagios -v $CFILE"
+fi
+
+CFILE=$DIR/nagios.d/omd.cfg
+f_check
+if [[ $SKIP != true ]] ;then
+  f_run "nagios -v $CFILE"
+fi
+}
+
+#---------------------------------------
+# check haproxy config
+
+f_haproxy () {
+DIR=/etc/haproxy
+
+CFILE=$DIR/haproxy.cfg
+f_check
+if [[ $SKIP != true ]] ;then
+  f_run "haproxy -c -f $CFILE"
+fi
+}
+
+#---------------------------------------
+# check puppet config
+
+f_puppet () {
+DIR=/etc/puppet
+
+CFILE=$DIR/manifests/site.pp
+f_check
+if [[ $SKIP != true ]] ;then
+  f_run "puppet parser validate $CFILE --verbose --debug"
+  if [[ $? == 0 ]] ;then
+    f_msg "puppet config OK"
+  fi
+fi
+}
+
+#===============================================================================
+# script start
+
+#---------------------------------------
+# preset variables (optional)
+
+VERBOSE=true
+SKIP=true
+
+#---------------------------------------
+# process options
+
+f_process_custom_options () {
+while (( "$#" > 0 )) ;do
+  case $1 in
+    --all|"")        TYPE=all                                ;break  ;;
+    -a|--apache)     TYPE=apache                             ;break  ;;
+    -n|--nagios)     TYPE=nagios                             ;break  ;;
+    -o|--omd)        TYPE=omd                                ;break  ;;
+    -p|--puppet)     TYPE=puppet                             ;break  ;;
+    -hap|--haproxy)  TYPE=haproxy                            ;break  ;;
+    *)               f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
+  esac
+done
+}
+
+INITARGS=$@
+f_process_options $INITARGS
+f_process_custom_options $REMAINARGS
+
+#---------------------------------------
+# display arguments
+
+f_msg -l -d "SCRIPT START"
+f_arguments
+
+#---------------------------------------
+# error checks
+
+f_vroot   # verify root execution
+f_prompt  # prompt for execution
+
+#===============================================================================
+# body
+
+#---------------------------------------
+# process TYPE
+
+case $TYPE in
+  apache)   f_apache   ;;
+  nagios)   f_nagios   ;;
+  omd)      f_omd      ;;
+  puppet)   f_puppet   ;;
+  haproxy)  f_haproxy  ;;
+  all)
+    f_apache
+    f_nagios
+    f_omd
+    f_puppet
+    f_haproxy
+  ;;
+esac
+
+#===============================================================================
+# cleanup
+
+#---------------------------------------
+# rotate log
+
+f_logro
+
+#...................
+# exit
+
+f_exit
