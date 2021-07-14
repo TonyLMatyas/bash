@@ -1,26 +1,13 @@
 #!/bin/bash
-# created by: Zell
-#===============================================================================
-# source files
 
-source /usr/local/sbin/zellib
-
-#===============================================================================
 # variables
+################################################################################
+LISTFILE=~/.gin.txt
 
-#---------------------------------------
-# custom values
-
-
-#---------------------------------------
-# files
-
-LISTFILE=/etc/gin.list
-
-#===============================================================================
-# help text
-
-HELP_TXT="
+# functions
+################################################################################
+f_help () {
+echo "
 This script types out ssh commands for you and executes them.
 GIN stands for \"Get IN\".
 
@@ -28,72 +15,37 @@ Reference File
   The reference file is used to populate the hostname list at the second prompt:
     $LISTFILE
   The reference file requires 4 sections in it (separated by spaces):
-    <hostname> <user> <port> <private_ssh_key_file_path> <optional comments>
+    <Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>
 
 SYNTAX:
-  # $PROG [OPTIONS]
+  # $0 [OPTIONS]
 
-$HELP_TXT_OPTIONS
+OPTIONS:
+  -h, --help    display this help text
+  <Nothing>     run/execute this script
 
-$HELP_TXT_EXAMPLES
-
-$HELP_TXT_NOTES
-
-"
-
-#===============================================================================
-# functions
-
-#===============================================================================
-# script start
-
-clear
-
-#---------------------------------------
-# preset variables (optional)
-
-VERBOSE=true
-SKIP=true
-
-#---------------------------------------
-# process options
-
-f_process_custom_options () {
-while (( "$#" > 0 )) ;do
-  case $1 in
-    "")                                           break  ;;
-    *)   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
-  esac
-done
+" ;exit
 }
 
-INITARGS=$@
-f_process_options $INITARGS
-f_process_custom_options $REMAINARGS
+# script start
+################################################################################
 
-#---------------------------------------
-# arguments
+# process options
+while (( "$#" > 0 )) ;do
+  case $1 in
+    '-h'|'--help')  f_help ;;
+    "")  break ;;
+    *)  echo "Error: Unknown option(s): $@" ;exit ;;
+  esac
+done
 
-f_msg -l -d "SCRIPT START"
-f_arguments
+# error check: list file exists
+if [[ ! -f $LISTFILE ]] ;then echo "Error: $LISTFILE does not exist"; exit ;fi
 
-#---------------------------------------
-# error checks
-
-f_exist $LISTFILE
-#f_vroot   # verify root execution
-f_prompt  # prompt for execution
-
-#===============================================================================
-# body
-
-#---------------------------------------
-# select server
-
-# first prompt: filter
-read -p "
+# first prompt: filter list
+clear ;read -p "
 Enter a string to filter the hostname list (case-insensitive grep).
-(To view all hosts, leave blank and hit enter.)
+To view all hosts, leave blank and hit \"Enter\".
 [selection]: " SELECTION
 
 LISTOPTIONS=`grep -i "$SELECTION" $LISTFILE`
@@ -108,43 +60,30 @@ read -p "
 Which server do you want to log into?
 [1-$COUNT, (q)uit]: " SELECTION
 
-#---------------------------------------
 # error checking
-
 if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
-  f_exit
+  echo "Exiting..." ;exit
 elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
-  f_msg -e -d "invalid selection"
+  echo "Error: invalid selection" ;exit
 fi
 
-#---------------------------------------
 # set variables
-
 HOST=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $2}' |awk '{print $1}'`
 USER=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $3}' |awk '{print $1}'`
 PORT=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $4}' |awk '{print $1}'`
 KEY=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $5}' |awk '{print $1}'`
-#IP=`ping -c1 $HOST |grep "bytes from" |awk '{print $4}' |cut -d: -f1`
+NOTE=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{$1=$2=$3=$4=$5="" ;print $0}' |awk '{print $1}'`
 
-#---------------------------------------
 # ssh into server
-
-f_msg "
+echo "
 
 HOST=$HOST
 USER=$USER
 PORT=$PORT
 KEY=$KEY
-IP=$IP
+NOTE=$NOTE
 
 ssh -p $PORT -i $KEY $USER@$HOST
 
 "
-
-f_run "ssh -p $PORT -i $KEY $USER@$HOST"
-
-#===============================================================================
-# cleanup
-
-f_logro  # rotate log
-f_exit   # exit script
+ssh -p $PORT -i $KEY $USER@$HOST
