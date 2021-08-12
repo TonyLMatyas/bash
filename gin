@@ -7,7 +7,7 @@ LISTFILE=~/.gin.txt
 # functions
 ################################################################################
 f_help () {
-echo "
+	echo "
 This script types out ssh commands for you and executes them.
 GIN stands for \"Get IN\".
 
@@ -27,16 +27,29 @@ OPTIONS:
 " ;exit
 }
 
+f_editor () {
+	if [[ -z $EDITOR ]] ;then
+		if [[ `which vim` ]] ;then EDITOR='vim'
+		elif [[ `which nano` ]] ;then EDITOR='nano'
+		elif [[ `which emacs` ]] ;then EDITOR='emacs'
+		else EDITOR='vi' ;fi
+	fi
+	echo "Editor is: `which $EDITOR`"
+}
+
+f_edit () { f_editor ;$EDITOR $LISTFILE ;exit ; }
+
 # script start
 ################################################################################
 
 # process options
 while (( "$#" > 0 )) ;do
-  case $1 in
-    '-h'|'--help')  f_help ;;
-    "")  break ;;
-    *)  echo "Error: Unknown option(s): $@" ;exit ;;
-  esac
+	case $1 in
+		'-h'|'--help')  f_help ;;
+		'-e'|'--edit')  f_edit ;;
+		"")  break ;;
+		*)  echo "Error: Unknown option(s): $@" ;exit ;;
+	esac
 done
 
 # error check: list file exists
@@ -62,9 +75,9 @@ Which server do you want to log into?
 
 # error checking
 if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
-  echo "Exiting..." ;exit
+	echo "Exiting..." ;exit
 elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
-  echo "Error: invalid selection" ;exit
+	echo "Error: invalid selection" ;exit
 fi
 
 # set variables
