@@ -22,6 +22,7 @@ SYNTAX:
 
 OPTIONS:
   -h, --help    display this help text
+  -e, --edit    edit reference file
   <Nothing>     run/execute this script
 
 " ;exit
