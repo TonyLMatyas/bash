@@ -112,68 +112,9 @@ if [[ $DAYS -lt 1 ]] ;then
 # process
 ########################################
 
-# create csr config file
-CSRCFG="$DIR/$FQDN-csr.cfg"
-read -p "
-Creating CSR config file: $CSRCFG
-	Edit as needed:
-		Change locale, key usage, etc.
-	If you are configuring a single-domain cert, remove the following lines:
-		subjectAltName = @alt_names
-		[ alt_names ]
-		DNS.0 = $DOM.$TLD
-		DNS.1 = $SUB.$DOM.$TLD
-[(c)ontinue]: " ANSWER
-if [[ $ANSWER != 'c' ]] && [[ $ANSWER != 'continue' ]] ;then
-	echo "Exiting..." ;exit ;fi
-
-echo "[ req ]
-default_md = sha256
-default_bits = 4096
-prompt = no
-distinguished_name = req_distinguished_name
-req_extensions = req_ext
-#x509_extensions = v3_ca
-[ req_distinguished_name ]
-commonName = $FQDN
-countryName = US
-stateOrProvinceName = NY
-localityName = New York
-organizationName = Company Inc.
-organizationalUnitName = Web Division
-[ req_ext ]
-#keyUsage = critical, digitalSignature
-keyUsage = critical, digitalSignature, dataEncipherment, keyEncipherment
-#extendedKeyUsage = serverAuth
-extendedKeyUsage = critical, serverAuth, clientAuth
-basicConstraints = critical, CA:false
-subjectAltName = @alt_names
-[ alt_names ]
-DNS.0 = $DOM.$TLD
-DNS.1 = $SUB.$DOM.$TLD" > $CSRCFG
-
-$EDITOR $CSRCFG
-
-# generate encrypted key & csr
-read -p "
-Generating encrypted key & CSR.  Next, you'll need to input the same password for the encrypted key multiple times.
-[(c)ontinue]: " ANSWER
-if [[ $ANSWER != 'c' ]] && [[ $ANSWER != 'continue' ]] ;then
-	echo "Exiting..." ;exit ;fi
-
-ENCKEY="$DIR/$FQDN.enckey"
-CSR="$DIR/$FQDN.csr"
-openssl req -newkey rsa:4096 -keyout $ENCKEY -out $CSR -sha256 -config $CSRCFG
-
-# generate plaintext key
-PTKEY="$DIR/$FQDN.key"
-openssl rsa -in $ENCKEY -out $PTKEY
-
-# generate self-signed cert file
+# create config file: self-signed
 SSCFG="$DIR/$FQDN-ss.cfg"
-CRT="$DIR/$FQDN.crt"
-if [[ $SSFLAG == 'true' ]] ;then
-	echo "[ req ]
+echo "[ req ]
 default_md = sha256
 default_bits = 4096
 prompt = no
@@ -199,7 +140,46 @@ subjectAltName = @alt_names
 [ alt_names ]
 DNS.0 = $DOM.$TLD
 DNS.1 = $SUB.$DOM.$TLD" > $SSCFG
-	openssl req -x509 -in $CSR -days $DAYS -key $PTKEY -config $SSCFG -extensions req_ext -nameopt utf8 -utf8 -out $CRT ;fi
+
+# edit csr config file
+read -p "
+Config file created.
+	Edit as needed:
+		Change locale, key usage, etc.
+	If you are configuring a single-domain cert, remove the following lines:
+		subjectAltName = @alt_names
+		[ alt_names ]
+		DNS.0 = $DOM.$TLD
+		DNS.1 = $SUB.$DOM.$TLD
+[(c)ontinue]: " ANSWER
+if [[ $ANSWER != 'c' ]] && [[ $ANSWER != 'continue' ]] ;then
+	echo "Exiting..." ;exit ;fi
+
+$EDITOR $SSCFG
+
+# create config file: csr
+CSRCFG="$DIR/$FQDN-csr.cfg"
+grep -v ^subjectKeyIdentifier $SSCFG |grep -v ^authorityKeyIdentifier > $CSRCFG
+
+# generate encrypted key & csr
+read -p "
+Generating encrypted key & CSR.  Next, you'll need to input the same password for the encrypted key multiple times.
+[(c)ontinue]: " ANSWER
+if [[ $ANSWER != 'c' ]] && [[ $ANSWER != 'continue' ]] ;then
+	echo "Exiting..." ;exit ;fi
+
+ENCKEY="$DIR/$FQDN.enckey"
+CSR="$DIR/$FQDN.csr"
+openssl req -newkey rsa:4096 -keyout $ENCKEY -out $CSR -sha256 -config $CSRCFG
+
+# generate plaintext key
+PTKEY="$DIR/$FQDN.key"
+openssl rsa -in $ENCKEY -out $PTKEY
+
+# generate self-signed cert file
+CRT="$DIR/$FQDN.crt"
+if [[ $SSFLAG == 'true' ]] ;then
+	openssl req -x509 -in $CSR -days $DAYS -key $PTKEY -config $CSRCFG -extensions req_ext -nameopt utf8 -utf8 -out $CRT ;fi
 
 # output
 ########################################
