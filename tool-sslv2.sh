@@ -39,8 +39,15 @@ if [[ ! -f "`which openssl`" ]] ;then
 read -p "
 What domain, or subdomain, is this for?
 	Examples:
-		domain.com
-		subdomain.example.net
+		domain only:
+			domain.com
+		subdomain:
+			www.example.net
+		multi-domain cert:
+			main.domain.com
+			(You'll have the option to add more domains later.)
+		wildcard cert:
+			*.something.org
 [(q)uit]: " ANSWER
 if [[ "$ANSWER" == 'q' ]] || [[ "$ANSWER" == 'quit' ]] ;then
 	echo "Exiting..." ;exit ;fi
@@ -63,6 +70,9 @@ Does this look correct?
 [(y)es, (n)o]: " ANSWER
 if [[ $ANSWER != 'y' ]] && [[ $ANSWER != 'yes' ]] ;then
 	echo "Exiting..." ;exit ;fi
+
+if [[ $SUB == \* ]] ;then 
+	WILDCARD='true' ;fi
 
 # choose directory that the files will go in
 read -p "
@@ -99,21 +109,27 @@ read -p "
 Do you want a self-signed version of this certificate?
 [(y)es, (n)o]: " ANSWER
 if [[ $ANSWER == 'y' ]] || [[ $ANSWER == 'yes' ]] ;then
-	SSFLAG='true' ;fi
-
-read -p "
+	SSFLAG='true'
+	read -p "
 When should the self-signed cert expire (days)?
 [(q)uit]: " DAYS
-if [[ "$DAYS" == 'q' ]] || [[ "$DAYS" == 'quit' ]] ;then
-	echo "Exiting..." ;exit ;fi
-if [[ $DAYS -lt 1 ]] ;then
-	echo "Error: unacceptable duration."; exit ;fi
+	if [[ "$DAYS" == 'q' ]] || [[ "$DAYS" == 'quit' ]] ;then
+		echo "Exiting..." ;exit ;fi
+	if [[ $DAYS -lt 1 ]] ;then
+		echo "Error: unacceptable duration."; exit ;fi
+fi
 
 # process
 ########################################
 
+# assign file name
+if [[ $WILDCARD == true ]] ;then
+	FILENAME="wildcard.$DOM.$TLD"
+else
+	FILENAME="$FQDN" ;fi
+
 # create config file: self-signed
-SSCFG="$DIR/$FQDN-ss.cfg"
+SSCFG="$DIR/$FILENAME-ss.cfg"
 echo "[ req ]
 default_md = sha256
 default_bits = 4096
@@ -145,8 +161,11 @@ DNS.1 = $SUB.$DOM.$TLD" > $SSCFG
 read -p "
 Config file created.
 	Edit as needed:
-		Change locale, key usage, etc.
-	If you are configuring a single-domain cert, remove the following lines:
+		Change locale, key usage, extensions, etc.
+	If you are configuring a multi-domain certificate, edit the following lines:
+		DNS.0 = $DOM.$TLD
+		DNS.1 = $SUB.$DOM.$TLD
+	If you are configuring a single-domain or wildcard certificate, remove the following lines:
 		subjectAltName = @alt_names
 		[ alt_names ]
 		DNS.0 = $DOM.$TLD
@@ -158,7 +177,8 @@ if [[ $ANSWER != 'c' ]] && [[ $ANSWER != 'continue' ]] ;then
 $EDITOR $SSCFG
 
 # create config file: csr
-CSRCFG="$DIR/$FQDN-csr.cfg"
+CSRCFG="$DIR/$FILENAME-csr.cfg"
+
 grep -v ^subjectKeyIdentifier $SSCFG |grep -v ^authorityKeyIdentifier > $CSRCFG
 
 # generate encrypted key & csr
@@ -168,21 +188,23 @@ Generating encrypted key & CSR.  Next, you'll need to input the same password fo
 if [[ $ANSWER != 'c' ]] && [[ $ANSWER != 'continue' ]] ;then
 	echo "Exiting..." ;exit ;fi
 
-ENCKEY="$DIR/$FQDN.enckey"
-CSR="$DIR/$FQDN.csr"
+ENCKEY="$DIR/$FILENAME.enckey"
+CSR="$DIR/$FILENAME.csr"
 openssl req -newkey rsa:4096 -keyout $ENCKEY -out $CSR -sha256 -config $CSRCFG
 
 # generate plaintext key
-PTKEY="$DIR/$FQDN.key"
+PTKEY="$DIR/$FILENAME.key"
 openssl rsa -in $ENCKEY -out $PTKEY
 
 # generate self-signed cert file
-CRT="$DIR/$FQDN.crt"
+CRT="$DIR/$FILENAME.crt"
 if [[ $SSFLAG == 'true' ]] ;then
 	openssl req -x509 -in $CSR -days $DAYS -key $PTKEY -config $CSRCFG -extensions req_ext -nameopt utf8 -utf8 -out $CRT ;fi
 
 # output
 ########################################
 
-ls -al $DIR/
+echo "
+Your new files:"
+ls -ald $DIR/*
 #rm -rf $DIR
