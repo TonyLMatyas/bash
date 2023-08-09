@@ -207,4 +207,3 @@ if [[ $SSFLAG == 'true' ]] ;then
 echo "
 Your new files:"
 ls -ald $DIR/*
-#rm -rf $DIR
