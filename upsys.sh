@@ -12,6 +12,7 @@ f_append_log () { echo "`date` $1" >> $LOG ; }
 f_update_apt () {
 	apt -y update ;f_append_log "Update Complete"
 	apt -y upgrade ;f_append_log "Upgrade Complete"
+	apt -y autoclean ;f_append_log "Autoclean Complete"
 	apt -y autoremove ;f_append_log "Autoremove Complete"
 }
 
