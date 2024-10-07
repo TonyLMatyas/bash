@@ -69,7 +69,7 @@ COUNT=`echo "$LISTOPTIONS" |wc -l |xargs`
 LISTNUM=`echo "$LISTOPTIONS" |sort |cat -n |column -t`
 
 read -p "
-`echo "$LISTNUM" |awk '{$4=$5=""; print $0}' |column -t`
+`echo "$LISTNUM" |column -t`
 
 Which server do you want to log into?
 [1-$COUNT, (q)uit]: " SELECTION
