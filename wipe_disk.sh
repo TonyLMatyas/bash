@@ -56,14 +56,14 @@ if [[ $DISK == '' || ! `echo $DISK |grep dev` ]] ;then
 	echo "$DISK is not a device." ;exit ;fi
 
 # zero out disk
-echo "dd..."
+echo "dd if=/dev/zero of=$DISK..."
 dd if=/dev/zero of=$DISK
 
 # wipe disk w/utility
 # -v   verbose
 # -n1  wipe disk once randomly
 # -z   wipa disk again with all zeroes
-echo "shred..."
+echo "shred -vzn1 $DISK..."
 shred -vzn1 $DISK
 
 # output
