@@ -52,7 +52,7 @@ lsblk
 ########################################
 
 # error check: disk
-if [[ $DISK == '' || ! `grep dev $DISK` ]] ;then
+if [[ $DISK == '' || ! `lsblk |grep $DISK` ]] ;then
 	echo "$DISK is not a device." ;exit ;fi
 
 # zero out disk
