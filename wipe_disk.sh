@@ -49,8 +49,7 @@ DISK="$1"
 ########################################
 
 # error check: disk
-exit
-if [[ ! `grep dev $DISK` ]] ;then
+if [[ $DISK == '' || ! `grep dev $DISK` ]] ;then
 	echo "$DISK is not a device." ;exit ;fi
 
 exit
