@@ -45,6 +45,9 @@ if [[ ! `which shred` ]] ;then
 # identify disk
 DISK="$1"
 
+# display results
+lsblk
+
 # processing
 ########################################
 
@@ -52,7 +55,6 @@ DISK="$1"
 if [[ $DISK == '' || ! `grep dev $DISK` ]] ;then
 	echo "$DISK is not a device." ;exit ;fi
 
-exit
 # zero out disk
 dd if=/dev/zero of=$DISK
 
