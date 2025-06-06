@@ -55,9 +55,12 @@ lsblk
 if [[ $DISK == '' || ! `echo $DISK |grep dev` ]] ;then
 	echo "$DISK is not a device." ;exit ;fi
 
-# zero out disk
-echo "dd if=/dev/zero of=$DISK..."
-dd if=/dev/zero of=$DISK
+# zero out disk for 30 seconds
+echo "timeout 30 dd if=/dev/zero of=$DISK..."
+timeout 30 dd if=/dev/zero of=$DISK
+
+# format drive: msdos
+parted $DISK mklabel msdos
 
 # wipe disk w/utility
 # -v   verbose
@@ -65,6 +68,9 @@ dd if=/dev/zero of=$DISK
 # -z   wipa disk again with all zeroes
 echo "shred -vzn1 $DISK..."
 shred -vzn1 $DISK
+
+# format drive: gpt
+parted $DISK mklabel gpt
 
 # output
 ########################################
