@@ -1,69 +1,53 @@
 #!/bin/bash
-# created by: Zell
 
-# source file
-#===============================================================================
-source /usr/local/sbin/zellib
+# Input
+################################################################################
 
-# variables
-#===============================================================================
+# Variables
+########################################
+FLLPTH="`readlink -e $0`"  # full path to this script (basepath)
 
-# preset variables (optional)
-#SKIP=true
-VERBOSE=true
+# Functions
+########################################
 
-# help text: contents
-#---------------------------------------
-HELP_TXT="
-This script ...
+# Help Text
+f_hlp () {
+  echo "
+DESCRIPTION:
+  This script ...
 
 SYNTAX:
-  # $PROG [OPTIONS]
+  # `basename $0` [OPTIONS]
 
-$HELP_TXT_OPTIONS
+OPTIONS:
+  -h, --help
+    Displays this help text.
+  -r, --run
+    Disables dry run and actually executes this script.
 
-$HELP_TXT_EXAMPLES
+NOTES:
+  ...
+" ; exit ; }
 
-$HELP_TXT_NOTES
+# Print error message & help text
+f_errr () {
+  echo "
+!!! ERROR: $1 !!!"
+f_hlp ; }
 
-"
+# processing
+################################################################################
 
-# functions
-#===============================================================================
-
-# process options
-#---------------------------------------
-f_process_custom_options () {
-while (( "$#" > 0 )) ;do
-  case $1 in
-    "")  break  ;;
-    *)   f_msg -e "Unknown option(s): $INITARGS" ;break  ;;
-  esac
-done
-}
-
-# script start
-#===============================================================================
-f_msg -l -d "SCRIPT START"
+# check for root privilege execution
+#if [[ `whoami` != 'root' ]] && [[ $1 != '-h' ]] && [[ $1 != '--help' ]];then f_errrmsg 'use "sudo" for execution' ;fi
 
 # process arguments
-#---------------------------------------
-INITARGS=$@
-f_process_options $INITARGS
-f_process_custom_options $REMAINARGS
-f_arguments  # display arguments (optional)
+case $1 in
+  '-h'|'--help')  f_hlp  ;;
+  '-r'|'--run')  RUN='true'  ;;
+  *)  f_errr "Invalid argument(s)"  ;;
+esac
 
-# error checks
-#---------------------------------------
-f_vroot   # verify root execution
-f_prompt  # prompt for execution
+# output
+################################################################################
 
-# body
-#---------------------------------------
-
-# example: display free disk space
-f_msg "printing free disk space..." ;f_run "df -h"
-
-# cleanup
-#---------------------------------------
-f_logro ;f_exit # rotate log & exit script
