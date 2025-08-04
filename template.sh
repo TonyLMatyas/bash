@@ -60,6 +60,6 @@ while (( "$#" > 0 )) ;do
 # Check for root privilege execution
 #if [[ `whoami` != 'root' ]] && [[ $1 != '-h' ]] && [[ $1 != '--help' ]];then f_errrmsg 'use "sudo" for execution' ;fi
 
-# output
+# Output
 ################################################################################
 
