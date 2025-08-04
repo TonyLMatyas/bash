@@ -39,14 +39,16 @@ f_hlp ; }
 ########################################
 
 # Filter options
-case $1 in
-  '-h'|'--help')  f_hlp  ;;
-  '-r'|'--run')  RUN='true'  ;;
-  *)  f_errr "Invalid argument(s)"  ;;
-esac
+while (( "$#" > 0 )) ;do
+  case $1 in
+    '-h'|'--help')  f_hlp  ;;
+#    '-r'|'--run')  RUN='true' ;shift  ;;
+#    *)  break  ;;
+    *)  f_errr "Invalid argument(s)"  ;;
+  esac ;done
 
 # Check dry run
-if [[ $RUN != 'true' ]] ;then f_hlp ;fi
+#if [[ $RUN != 'true' ]] ;then f_hlp ;fi
 
 # Processing
 ################################################################################
