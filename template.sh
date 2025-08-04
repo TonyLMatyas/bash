@@ -39,7 +39,11 @@ f_hlp ; }
 ########################################
 
 # Filter options
+if [[ "$#" < 1 ]] ;then f_hlp ;fi
+COUNT=0
 while (( "$#" > 0 )) ;do
+  COUNT=$((COUNT + 1))
+  if [[ $COUNT > 99 ]] ;then f_errr "Script is looping" ;fi
   case $1 in
     '-h'|'--help')  f_hlp  ;;
 #    '-r'|'--run')  RUN='true' ;shift  ;;
