@@ -1,33 +1,41 @@
 #!/bin/bash
 
-# variables
+# input
 ################################################################################
+
+# variables
+########################################
+FRMT='<Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>'
 LISTFILE=~/.gin.txt
 
 # functions
-################################################################################
+########################################
+
+# help text
 f_help () {
 	echo "
 This script types out ssh commands for you and executes them.
 GIN stands for \"Get IN\".
 
-Reference File
+Reference (List) File
   The reference file is used to populate the hostname list at the second prompt:
     $LISTFILE
   The reference file requires 4 sections in it (separated by spaces):
-    <Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>
+    $FRMT
 
 SYNTAX:
   # $0 [OPTIONS]
 
 OPTIONS:
   -h, --help    display this help text
+  -l, --list    display reference file contents
   -e, --edit    edit reference file
   <Nothing>     run/execute this script
 
 " ;exit
 }
 
+# set editor
 f_editor () {
 	if [[ -z $EDITOR ]] ;then
 		if [[ `which vim` ]] ;then EDITOR='vim'
@@ -38,23 +46,30 @@ f_editor () {
 	echo "Editor is: `which $EDITOR`"
 }
 
+# edit list file
 f_edit () { f_editor ;$EDITOR $LISTFILE ;exit ; }
 
-# script start
-################################################################################
+# display list file
+f_list () { cat $LISTFILE ;exit ; }
 
 # process options
+########################################
 while (( "$#" > 0 )) ;do
 	case $1 in
 		'-h'|'--help')  f_help ;;
 		'-e'|'--edit')  f_edit ;;
+		'-l'|'--list')  f_list ;;
 		"")  break ;;
 		*)  echo "Error: Unknown option(s): $@" ;exit ;;
 	esac
 done
 
-# error check: list file exists
-if [[ ! -f $LISTFILE ]] ;then echo "Error: $LISTFILE does not exist"; exit ;fi
+# prompts
+########################################
+
+# if needed, create list file
+if [[ ! -f $LISTFILE ]] ;then
+	echo "$FRMT" > $LISTFILE ;fi
 
 # first prompt: filter list
 clear ;read -p "
@@ -78,17 +93,25 @@ Which server do you want to log into?
 if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
 	echo "Exiting..." ;exit
 elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
-	echo "Error: invalid selection" ;exit
-fi
+	echo "Error: invalid selection" ;exit ;fi
 
 # set variables
+########################################
 HOST=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $2}' |awk '{print $1}'`
 USER=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $3}' |awk '{print $1}'`
 PORT=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $4}' |awk '{print $1}'`
 KEY=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $5}' |awk '{print $1}'`
 NOTE=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{$1=$2=$3=$4=$5="" ;print $0}' |awk '{print $1}'`
 
+# process
+################################################################################
+
+# fix list file permissions
+########################################
+chmod 640 $LISTFILE
+
 # ssh into server
+########################################
 echo "
 
 HOST=$HOST
@@ -101,3 +124,6 @@ ssh -p $PORT -i $KEY $USER@$HOST
 
 "
 ssh -p $PORT -i $KEY $USER@$HOST
+
+# output
+################################################################################
