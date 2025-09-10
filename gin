@@ -13,7 +13,7 @@ LISTFILE=~/.gin.txt
 
 # help text
 f_help () {
-	echo "
+  echo "
 This script types out ssh commands for you and executes them.
 GIN stands for \"Get IN\".
 
@@ -37,13 +37,13 @@ OPTIONS:
 
 # set editor
 f_editor () {
-	if [[ -z $EDITOR ]] ;then
-		if [[ `which vim` ]] ;then EDITOR='vim'
-		elif [[ `which nano` ]] ;then EDITOR='nano'
-		elif [[ `which emacs` ]] ;then EDITOR='emacs'
-		else EDITOR='vi' ;fi
-	fi
-	echo "Editor is: `which $EDITOR`"
+  if [[ -z $EDITOR ]] ;then
+    if [[ `which vim` ]] ;then EDITOR='vim'
+    elif [[ `which nano` ]] ;then EDITOR='nano'
+    elif [[ `which emacs` ]] ;then EDITOR='emacs'
+    else EDITOR='vi' ;fi
+  fi
+  echo "Editor is: `which $EDITOR`"
 }
 
 # edit list file
@@ -55,21 +55,24 @@ f_list () { cat $LISTFILE ;exit ; }
 # process options
 ########################################
 while (( "$#" > 0 )) ;do
-	case $1 in
-		'-h'|'--help')  f_help ;;
-		'-e'|'--edit')  f_edit ;;
-		'-l'|'--list')  f_list ;;
-		"")  break ;;
-		*)  echo "Error: Unknown option(s): $@" ;exit ;;
-	esac
+  case $1 in
+    '-h'|'--help')  f_help ;;
+    '-e'|'--edit')  f_edit ;;
+    '-l'|'--list')  f_list ;;
+    "")  break ;;
+    *)  echo "Error: Unknown option(s): $@" ;exit ;;
+  esac
 done
 
 # prompts
 ########################################
 
+# fix list file permissions
+chmod 640 $LISTFILE
+
 # if needed, create list file
 if [[ ! -f $LISTFILE ]] ;then
-	echo "$FRMT" > $LISTFILE ;fi
+  echo "$FRMT" > $LISTFILE ;fi
 
 # first prompt: filter list
 clear ;read -p "
@@ -91,9 +94,9 @@ Which server do you want to log into?
 
 # error checking
 if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
-	echo "Exiting..." ;exit
+  echo "Exiting..." ;exit
 elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
-	echo "Error: invalid selection" ;exit ;fi
+  echo "Error: invalid selection" ;exit ;fi
 
 # set variables
 ########################################
@@ -105,10 +108,6 @@ NOTE=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{$1=$2=$3=$4=$5="" ;print $0}'
 
 # process
 ################################################################################
-
-# fix list file permissions
-########################################
-chmod 640 $LISTFILE
 
 # ssh into server
 ########################################
