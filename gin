@@ -5,7 +5,6 @@
 
 # Variables
 ########################################
-FLLPTH="`readlink -e $0`"  # full path to this script (basepath)
 FRMT='<Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>'
 LISTFILE=~/.gin.txt
 
