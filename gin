@@ -134,7 +134,7 @@ while (( "$#" > 0 )) ;do
 if [[ $HELP == 'true' ]] ;then f_hlp ;fi
 
 # list file exists
-if [[ ! -f $LISTFILE ]] ;then echo "Error: $LISTFILE does not exist"; exit ;fi
+if [[ ! -f $LISTFILE ]] ;then echo "$FRMT" > $LISTFILE ;fi
 
 # Script Start
 ########################################
