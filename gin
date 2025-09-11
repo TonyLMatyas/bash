@@ -26,11 +26,13 @@ OPTIONS:
     Displays this help text.
   -r, --run
     Run/execute this script
+  -l, --list
+    List the reference file contents
   -e, --edit
     Edit the reference file
 
 NOTES:
-  Reference File
+  Reference/List File
     The reference file is used to populate the hostname list at the second prompt:
       $LISTFILE
     The reference file requires 4 sections in it (separated by spaces):
@@ -42,6 +44,9 @@ f_errr () {
   echo "
 !!! ERROR: $1 !!!"
 f_hlp ; }
+
+# simply display the contents of the list file
+f_list () { cat $LISTFILE ; }
 
 # set editor and edit list file
 f_edit () {
@@ -114,6 +119,7 @@ while (( "$#" > 0 )) ;do
   case $1 in
     '-h'|'--help')  HELP='true' ;shift  ;;
     '-r'|'--run')  RUN='true' ;shift  ;;
+    '-l'|'--list')  LIST='true' ;shift ;;
     '-e'|'--edit')  EDIT='true' ;shift ;;
     *)  f_errr "Invalid argument(s)"  ;;
   esac ;done
@@ -140,6 +146,7 @@ chmod 640 $LISTFILE
 sort -o $LISTFILE $LISTFILE
 
 # Process Options
+if [[ $LIST == 'true' ]] ;then f_list ;fi
 if [[ $EDIT == 'true' ]] ;then f_edit ;fi
 if [[ $RUN == 'true' ]] ;then f_run ;fi
 
