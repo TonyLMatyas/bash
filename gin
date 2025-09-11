@@ -1,95 +1,96 @@
 #!/bin/bash
 
-# variables
+# Input
 ################################################################################
+
+# Variables
+########################################
+FLLPTH="`readlink -e $0`"  # full path to this script (basepath)
 LISTFILE=~/.gin.txt
 
-# functions
-################################################################################
-f_help () {
-	echo "
-This script types out ssh commands for you and executes them.
-GIN stands for \"Get IN\".
+# Functions
+########################################
 
-Reference File
-  The reference file is used to populate the hostname list at the second prompt:
-    $LISTFILE
-  The reference file requires 4 sections in it (separated by spaces):
-    <Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>
+# Display help text
+f_hlp () {
+  echo "
+DESCRIPTION:
+  This script types out ssh commands for you and executes them.
+  GIN stands for \"Get IN\".
 
 SYNTAX:
-  # $0 [OPTIONS]
+  # `basename $0` [OPTIONS]
 
 OPTIONS:
-  -h, --help    display this help text
-  -e, --edit    edit reference file
-  <Nothing>     run/execute this script
+  -h, --help
+    Displays this help text.
+  -r, --run
+    Run/execute this script
+  -e, --edit
+    Edit the reference file
 
-" ;exit
-}
+NOTES:
+  Reference File
+    The reference file is used to populate the hostname list at the second prompt:
+      $LISTFILE
+    The reference file requires 4 sections in it (separated by spaces):
+      <Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>
+" ; exit ; }
 
-f_editor () {
-	if [[ -z $EDITOR ]] ;then
-		if [[ `which vim` ]] ;then EDITOR='vim'
-		elif [[ `which nano` ]] ;then EDITOR='nano'
-		elif [[ `which emacs` ]] ;then EDITOR='emacs'
-		else EDITOR='vi' ;fi
-	fi
-	echo "Editor is: `which $EDITOR`"
-}
+# Print error message & help text
+f_errr () {
+  echo "
+!!! ERROR: $1 !!!"
+f_hlp ; }
 
-f_edit () { f_editor ;$EDITOR $LISTFILE ;exit ; }
+# set editor and edit list file
+f_edit () {
+  if [[ -z $EDITOR ]] ;then
+    if [[ `which vim` ]] ;then EDITOR='vim'
+    elif [[ `which nano` ]] ;then EDITOR='nano'
+    elif [[ `which emacs` ]] ;then EDITOR='emacs'
+    else EDITOR='vi' ;fi
+  fi
+  echo "Editor is: `which $EDITOR`"
+  $EDITOR $LISTFILE
+  exit ; }
 
-# script start
-################################################################################
+# SSH into server
+f_run () {
 
-# process options
-while (( "$#" > 0 )) ;do
-	case $1 in
-		'-h'|'--help')  f_help ;;
-		'-e'|'--edit')  f_edit ;;
-		"")  break ;;
-		*)  echo "Error: Unknown option(s): $@" ;exit ;;
-	esac
-done
-
-# error check: list file exists
-if [[ ! -f $LISTFILE ]] ;then echo "Error: $LISTFILE does not exist"; exit ;fi
-
-# first prompt: filter list
-clear ;read -p "
+  # first prompt: filter list
+  clear ;read -p "
 Enter a string to filter the hostname list (case-insensitive grep).
 To view all hosts, leave blank and hit \"Enter\".
 [selection]: " SELECTION
 
-LISTOPTIONS=`grep -i "$SELECTION" $LISTFILE`
+  LISTOPTIONS=`grep -i "$SELECTION" $LISTFILE`
 
-# second prompt: selection
-COUNT=`echo "$LISTOPTIONS" |wc -l |xargs`
-LISTNUM=`echo "$LISTOPTIONS" |sort |cat -n |column -t`
+  # second prompt: selection
+  COUNT=`echo "$LISTOPTIONS" |wc -l |xargs`
+  LISTNUM=`echo "$LISTOPTIONS" |sort |cat -n |column -t`
 
-read -p "
+  read -p "
 `echo "$LISTNUM" |column -t`
 
 Which server do you want to log into?
 [1-$COUNT, (q)uit]: " SELECTION
 
-# error checking
-if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
-	echo "Exiting..." ;exit
-elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
-	echo "Error: invalid selection" ;exit
-fi
+  # error checking
+  if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
+    echo "Exiting..." ;exit
+  elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
+    echo "Error: invalid selection" ;exit ;fi
 
-# set variables
-HOST=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $2}' |awk '{print $1}'`
-USER=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $3}' |awk '{print $1}'`
-PORT=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $4}' |awk '{print $1}'`
-KEY=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $5}' |awk '{print $1}'`
-NOTE=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{$1=$2=$3=$4=$5="" ;print $0}' |awk '{print $1}'`
+  # set variables
+  HOST=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $2}' |awk '{print $1}'`
+  USER=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $3}' |awk '{print $1}'`
+  PORT=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $4}' |awk '{print $1}'`
+  KEY=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $5}' |awk '{print $1}'`
+  NOTE=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{$1=$2=$3=$4=$5="" ;print $0}' |awk '{print $1}'`
 
-# ssh into server
-echo "
+  # ssh into server
+  echo "
 
 HOST=$HOST
 USER=$USER
@@ -100,4 +101,49 @@ NOTE=$NOTE
 ssh -p $PORT -i $KEY $USER@$HOST
 
 "
-ssh -p $PORT -i $KEY $USER@$HOST
+  ssh -p $PORT -i $KEY $USER@$HOST ; }
+
+# Arguments
+########################################
+
+# Filter Options
+if [[ "$#" < 1 ]] ;then f_hlp ;fi
+COUNT=0
+while (( "$#" > 0 )) ;do
+  COUNT=$((COUNT + 1))
+  if [[ $COUNT > 99 ]] ;then f_errr "Script is looping" ;fi
+  case $1 in
+    '-h'|'--help')  HELP='true' ;shift  ;;
+    '-r'|'--run')  RUN='true' ;shift  ;;
+    '-e'|'--edit')  EDIT='true' ;shift ;;
+    *)  f_errr "Invalid argument(s)"  ;;
+  esac ;done
+
+# Processing
+################################################################################
+
+# Error Checks
+########################################
+
+# Check for Help
+if [[ $HELP == 'true' ]] ;then f_hlp ;fi
+
+# list file exists
+if [[ ! -f $LISTFILE ]] ;then echo "Error: $LISTFILE does not exist"; exit ;fi
+
+# Script Start
+########################################
+
+# fix list file permissions
+chmod 640 $LISTFILE
+
+# sort file contents
+sort -o $LISTFILE $LISTFILE
+
+# Process Options
+if [[ $EDIT == 'true' ]] ;then f_edit ;fi
+if [[ $RUN == 'true' ]] ;then f_run ;fi
+
+# Output
+################################################################################
+
