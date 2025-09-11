@@ -6,6 +6,7 @@
 # Variables
 ########################################
 FLLPTH="`readlink -e $0`"  # full path to this script (basepath)
+FRMT='<Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>'
 LISTFILE=~/.gin.txt
 
 # Functions
@@ -34,7 +35,7 @@ NOTES:
     The reference file is used to populate the hostname list at the second prompt:
       $LISTFILE
     The reference file requires 4 sections in it (separated by spaces):
-      <Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>
+      $FRMT
 " ; exit ; }
 
 # Print error message & help text
@@ -91,7 +92,6 @@ Which server do you want to log into?
 
   # ssh into server
   echo "
-
 HOST=$HOST
 USER=$USER
 PORT=$PORT
