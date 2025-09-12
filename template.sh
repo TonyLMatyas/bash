@@ -23,7 +23,7 @@ OPTIONS:
   -h, --help
     Displays this help text.
   -r, --run
-    Disables dry run and actually executes this script.
+    Executes this script.
 
 NOTES:
   ...
@@ -34,6 +34,11 @@ f_errr () {
   echo "
 !!! ERROR: $1 !!!"
 f_hlp ; }
+
+# Run script
+f_run () {
+  ;
+}
 
 # Arguments
 ########################################
@@ -68,7 +73,6 @@ if [[ $HELP == 'true' ]] ;then f_hlp ;fi
 
 # Process Options
 if [[ $RUN == 'true' ]] ;then f_run ;fi
-if [[ $EDIT == 'true' ]] ;then f_edit ;fi
 
 # Output
 ################################################################################
