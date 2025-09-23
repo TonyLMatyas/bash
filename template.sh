@@ -5,7 +5,7 @@
 
 # Variables
 ########################################
-FLLPTH="`readlink -e $0`"  # full path to this script (basepath)
+#FLLPTH="`readlink -e $0`"  # The full path to this script (basepath)
 
 # Functions
 ########################################
@@ -72,7 +72,7 @@ if [[ $HELP == 'true' ]] ;then f_hlp ;fi
 ########################################
 
 # Process Options
-if [[ $RUN == 'true' ]] ;then f_run ;fi
+if [[ $RUN != 'true' ]] ;then exit ;fi
 
 # Output
 ################################################################################
