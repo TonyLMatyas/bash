@@ -11,8 +11,7 @@
 ########################################
 
 # Display help text
-f_hlp () {
-  echo "
+f_hlp () { echo "
 DESCRIPTION:
   This script ...
 
@@ -30,31 +29,21 @@ NOTES:
 " ; exit ; }
 
 # Print error message & help text
-f_errr () {
-  echo "
-!!! ERROR: $1 !!!"
-f_hlp ; }
+f_errr () { echo ;echo "!!! ERROR: $1 !!!" ;f_hlp ; }
 
-# Run script
-f_run () {
-  ;
-}
+# Display
+f_display () { echo "
+=
+" ; }
 
 # Arguments
 ########################################
 
 # Filter options
-if [[ "$#" < 1 ]] ;then f_hlp ;fi
-COUNT=0
-while (( "$#" > 0 )) ;do
-  COUNT=$((COUNT + 1))
-  if [[ $COUNT > 99 ]] ;then f_errr "Script is looping" ;fi
-  case $1 in
-    '-h'|'--help')  HELP='true' ;shift  ;;
-    '-r'|'--run')  RUN='true' ;shift  ;;
-#    *)  break  ;;
-    *)  f_errr "Invalid argument(s)"  ;;
-  esac ;done
+case $1 in
+  '-r'|'--run')  RUN='true' ;shift  ;;
+  *)  HELP='true' ;shift  ;;
+esac
 
 # Processing
 ################################################################################
