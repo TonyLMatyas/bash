@@ -7,7 +7,8 @@
 ########################################
 
 # Default
-BASE="`readlink -f $0`"  # The full path to this script (basepath)
+FLLP="`readlink -f $0`"  # The full path to this script (basepath)
+BASE="`basename $0`"
 HOME=~
 DATE="`date +%F`"
 
@@ -32,7 +33,7 @@ DESCRIPTION:
   This script ...
 
 SYNTAX:
-  # `basename $0` [OPTIONS]
+  # $BASE [OPTIONS]
 
 OPTIONS:
   -h, --help
@@ -62,7 +63,7 @@ f_display () {
 	f_initdirs
 	declare -p > $FWTO
 	for var in `grep '=' $FWTO |grep '^[A-Z]' |awk -F'=' '{print $1}'` ;do
-		if [[ `grep "$var" "$BASE"` ]];then
+		if [[ `grep "$var" "$FLLP"` ]];then
 			grep ^$var\= $FWTO ;fi ;done ; }
 
 # Arguments
