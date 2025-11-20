@@ -55,10 +55,10 @@ f_ifdir () { if [[ ! -d "$1" ]] ;then mkdir -p "$1" ;fi ; }
 
 # Initialize files/directories
 f_initdirs () {
-  cat /dev/null > $FWTO
-  cat /dev/null > $FWTT
   f_ifdir "$DBMN"
-  f_ifdir "$DWMN" ; }
+  f_ifdir "$DWMN"
+  cat /dev/null > $FWTO
+  cat /dev/null > $FWTT ; }
 
 # Print message with dots
 f_dots () {
@@ -69,6 +69,7 @@ f_dots () {
 # Display variables
 f_display () {
   f_initdirs
+  exit # need to check compatability on linux & mac
   declare -p > $FWTO
   for var in `grep '=' $FWTO |grep '^[A-Z]' |awk -F'=' '{print $1}'` ;do
     if [[ `grep "$var" "$FLLP"` ]];then
@@ -99,7 +100,9 @@ if [[ $HELP == 'true' ]] ;then f_hlp ;fi
 ########################################
 
 # Process options
-if [[ $RUN != 'true' ]] ;then exit ;fi
+if [[ $RUN != 'true' ]] ;then
+  exit
+fi
 
 # Output
 ################################################################################
