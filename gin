@@ -5,21 +5,37 @@
 
 # Variables
 ########################################
-FRMT='<Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>'
-LISTFILE=~/.gin.txt
+
+# Default Variables
+HOME=~
+FULL="`readlink -f $0`"  # The full path to this script (basepath)
+BASE="`basename $0`"
+DATE="`date +%F`"
+
+# Backup Variables
+VBND="$BASE/$DATE"
+DBMN="$HOME/backups/$VBND"
+
+# Working Variables
+DWMN="/tmp/$VBND"
+FWTO="$DWMN/tempone.tmp"
+FWTT="$DWMN/temptwo.tmp"
+
+# Custom Variables
+LPFR='<Hostname> <User> <Port> <PrivateSSHKeyFilePath> <OptionalComments>'
+FPLS="$HOME/.gin.txt"
 
 # Functions
 ########################################
 
 # Display help text
-f_hlp () {
-  echo "
+f_hlp () { echo "
 DESCRIPTION:
   This script types out ssh commands for you and executes them.
   GIN stands for \"Get IN\".
 
 SYNTAX:
-  # `basename $0` [OPTIONS]
+  # $BASE [OPTIONS]
 
 OPTIONS:
   -h, --help
@@ -36,36 +52,33 @@ OPTIONS:
 NOTES:
   Reference/List File
     The reference file is used to populate the hostname list at the second prompt:
-      $LISTFILE
+      $FPLS
     The reference file requires 4 sections in it (separated by spaces):
-      $FRMT
+      $LPFR
 " ; exit ; }
 
 # Print error message & help text
-f_errr () {
-  echo "
-!!! ERROR: $1 !!!"
-f_hlp ; }
+f_errr () { echo ;echo "!!! ERROR: $1 !!!" ;f_hlp ; }
 
 # simply display the contents of the list file
-f_list () { cat $LISTFILE ; }
+f_list () { cat $FPLS ; }
 
 # filter the contents of the list file with the provided string
 f_grep () { 
 	if [[ -z "$VWST" ]] ;then
 		f_errr "String is empty." ;fi
-	grep "$VWST" $LISTFILE ; }
+	grep "$VWST" $FPLS ; }
 
 # set editor and edit list file
 f_edit () {
-  if [[ -z $EDITOR ]] ;then
-    if [[ `which vim` ]] ;then EDITOR='vim'
-    elif [[ `which nano` ]] ;then EDITOR='nano'
-    elif [[ `which emacs` ]] ;then EDITOR='emacs'
-    else EDITOR='vi' ;fi
+  if [[ -z $VWED ]] ;then
+    if [[ `which vim` ]] ;then VWED='vim'
+    elif [[ `which nano` ]] ;then VWED='nano'
+    elif [[ `which emacs` ]] ;then VWED='emacs'
+    else VWED='vi' ;fi
   fi
-  echo "Editor is: `which $EDITOR`"
-  $EDITOR $LISTFILE
+  echo "Editor is: `which $VWED`"
+  $VWED $FPLS
   exit ; }
 
 # SSH into server
@@ -75,32 +88,32 @@ f_run () {
   clear ;read -p "
 Enter a string to filter the hostname list (case-insensitive grep).
 To view all hosts, leave blank and hit \"Enter\".
-[selection]: " SELECTION
+[selection]: " VWSL
 
-  LISTOPTIONS=`grep -i "$SELECTION" $LISTFILE`
+  CWLO=`grep -i "$VWSL" $FPLS`
 
   # second prompt: selection
-  COUNT=`echo "$LISTOPTIONS" |wc -l |xargs`
-  LISTNUM=`echo "$LISTOPTIONS" |sort |cat -n |column -t`
+  VWCN=`echo "$CWLO" |wc -l |xargs`
+  CWLN=`echo "$CWLO" |sort |cat -n |column -t`
 
   read -p "
-`echo "$LISTNUM" |column -t`
+`echo "$CWLN" |column -t`
 
 Which server do you want to log into?
-[1-$COUNT, (q)uit]: " SELECTION
+[1-$VWCN, (q)uit]: " VWSL
 
   # error checking
-  if [[ $SELECTION == q ]] || [[ $SELECTION == quit ]] ;then
+  if [[ $VWSL == q ]] || [[ $VWSL == quit ]] ;then
     echo "Exiting..." ;exit
-  elif [[ $SELECTION -lt 1 ]] || [[ $SELECTION -gt $COUNT ]] ;then
+  elif [[ $VWSL -lt 1 ]] || [[ $VWSL -gt $VWCN ]] ;then
     echo "Error: invalid selection" ;exit ;fi
 
   # set variables
-  HOST=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $2}' |awk '{print $1}'`
-  USER=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $3}' |awk '{print $1}'`
-  PORT=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $4}' |awk '{print $1}'`
-  KEY=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{print $5}' |awk '{print $1}'`
-  NOTE=`echo "$LISTNUM" |grep "^$SELECTION\ " |awk '{$1=$2=$3=$4=$5="" ;print $0}' |awk '{print $1}'`
+  HOST=`echo "$CWLN" |grep "^$VWSL\ " |awk '{print $2}' |awk '{print $1}'`
+  USER=`echo "$CWLN" |grep "^$VWSL\ " |awk '{print $3}' |awk '{print $1}'`
+  PORT=`echo "$CWLN" |grep "^$VWSL\ " |awk '{print $4}' |awk '{print $1}'`
+  KEY=`echo "$CWLN" |grep "^$VWSL\ " |awk '{print $5}' |awk '{print $1}'`
+  NOTE=`echo "$CWLN" |grep "^$VWSL\ " |awk '{$1=$2=$3=$4=$5="" ;print $0}' |awk '{print $1}'`
 
   # ssh into server
   echo "
@@ -120,10 +133,10 @@ ssh -p $PORT -i $KEY $USER@$HOST
 
 # Filter Options
 if [[ "$#" < 1 ]] ;then f_hlp ;fi
-COUNT=0
+VWCN=0
 while (( "$#" > 0 )) ;do
-  COUNT=$((COUNT + 1))
-  if [[ $COUNT > 99 ]] ;then f_errr "Script is looping" ;fi
+  VWCN=$((VWCN + 1))
+  if [[ $VWCN > 99 ]] ;then f_errr "Script is looping" ;fi
   case $1 in
     '-h'|'--help')  HELP='true' ;shift  ;;
     '-r'|'--run')  RUN='true' ;shift  ;;
@@ -143,16 +156,16 @@ while (( "$#" > 0 )) ;do
 if [[ $HELP == 'true' ]] ;then f_hlp ;fi
 
 # list file exists
-if [[ ! -f $LISTFILE ]] ;then echo "$FRMT" > $LISTFILE ;fi
+if [[ ! -f $FPLS ]] ;then echo "$LPFR" > $FPLS ;fi
 
 # Script Start
 ########################################
 
 # fix list file permissions
-chmod 640 $LISTFILE
+chmod 640 $FPLS
 
 # sort file contents
-sort -o $LISTFILE $LISTFILE
+sort -o $FPLS $FPLS
 
 # Process Options
 if [[ $LIST == 'true' ]] ;then f_list ;fi
