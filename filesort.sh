@@ -43,6 +43,9 @@ OPTIONS:
   -d, --date
     Sort files by year & month.
       $ $BASE --date ~/Pictures
+  -r, --rename
+    Rename files with spaces to underscores.
+      $ $BASE --rename ~/Documents/
   -t, --type
     Sort files by file extension.
       $ $BASE --type ~/Downloads/
@@ -52,6 +55,9 @@ OPTIONS:
   -ct, --consolidate-type
     Same as running '-c' then '-t'
       $ $BASE -ct ~/Downloads/
+  -cr, -rc, --rename-consolidate
+    Same as running '-r' then '-c'
+      $ $BASE -cr ~/Pictures/
 " ; exit ; }
 
 # Print error message & help text
@@ -91,9 +97,11 @@ TYPE=$TYPE
 case $1 in
   '-c'|'--consolidate')  CONS='true' ;DWSP="$2" ;shift ;shift  ;;
   '-d'|'--date')  YRMN='true' ;DWSP="$2" ;shift ;shift  ;;
-  '-cd'|'--consolidate-date')  CONS='true' ;YRMN='true' ;DWSP="$2" ;shift ;shift  ;;
+  '-r'|'--rename')  NAME='true' ;DWSP="$2" ;shift ;shift  ;;
   '-t'|'--type')  TYPE='true' ;DWSP="$2" ;shift ;shift  ;;
+  '-cd'|'--consolidate-date')  CONS='true' ;YRMN='true' ;DWSP="$2" ;shift ;shift  ;;
   '-ct'|'--consolidate-type')  CONS='true' ;TYPE='true' ;DWSP="$2" ;shift ;shift  ;;
+  '-cr'|'-rc'|'--rename-consolidate')  CONS='true' ;NAME='true' ;DWSP="$2" ;shift ;shift  ;;
   *)  HELP='true' ;shift  ;;
 esac
 
@@ -120,6 +128,15 @@ DTSP=$DWSP
 DWSP="`readlink -f $DTSP`"
 
 # Process options
+if [[ $NAME == 'true' ]] ;then
+  cd "$DWSP" || { f_errr "Directory not found." ; }
+  for file in *; do
+    if [[ "$file" == *" "* ]]; then
+      new_file=$(echo "$file" | tr ' ' '_')
+      mv "$file" "$new_file"
+      echo "Renamed '$file' to '$new_file'"
+    fi ;done ;fi
+
 if [[ $CONS == 'true' ]] ;then
   find $DWSP/ -type f -exec mv "{}" $DWSP/ \; ;fi
 
