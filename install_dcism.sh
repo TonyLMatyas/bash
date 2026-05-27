@@ -88,7 +88,7 @@ echo "cat $FDST
 apt -y update
 
 # install iSM prereq & iSM package
-apt -y install dcism-osc && apt -y install dcism-osc
+apt -y install dcism-osc && apt -y install dcism
 
 # enable iSM service
 VSRV="dcismeng.service"
