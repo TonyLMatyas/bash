@@ -2,7 +2,7 @@
 
 # input
 DLOG=/root/logs
-FLOG=$DLOF/nvidiacount.log
+FLOG=$DLOG/nvidiacount.log
 
 # processing
 if [[ ! -d $DLOG ]] ;then mkdir $DLOG ;fi
