@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-LOG_FILE="/root/logs/nvidiacount.log"
+DLOG='/root/logs'
+LOG_FILE="$DLOG/nvidiacount.log"
 
 # Ensure the target directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -53,3 +54,6 @@ GPU_COUNT=$(grep -c '^[0-9a-fA-F]\{2\}:[0-9a-fA-F]\{2\}\.[0-9a-fA-F]' "$TEMP_OUT
 
 # Clean up
 rm -f "$TEMP_OUT"
+
+# output
+tail -n50 $LOG_FILE
