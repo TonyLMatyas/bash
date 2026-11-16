@@ -52,9 +52,54 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Sort the stanzas (Host/Match blocks) of $CONFIG alphabetically by HostName.
+# Comment lines directly above a Host line travel with that stanza; text before
+# the first stanza stays at the top; stanzas without a HostName (e.g. "Host *")
+# go last in their original order. A backup is saved as "$CONFIG.bak".
+sort_config() {
+    local tmp
+    tmp=$(mktemp) || return 1
+    awk '
+    function add(s) { if (ns == 0) pre = pre s "\n"; else body[ns] = body[ns] "\n" s }
+    function flushpend(   j) { for (j = 1; j <= npend; j++) add(pend[j]); npend = 0 }
+    function enc(s) { sub(/\n+$/, "", s); gsub(/\n/, "\001", s); return s }
+    { sub(/\r$/, ""); line = $0 }
+    /^[ \t]*$/ { flushpend(); add(line); next }
+    /^[ \t]*#/ { pend[++npend] = line; next }
+    {
+        k = tolower($1)
+        if (k == "host" || k == "match") {
+            ns++; body[ns] = ""; hn[ns] = ""
+            for (j = 1; j <= npend; j++) body[ns] = body[ns] pend[j] "\n"
+            npend = 0
+            body[ns] = body[ns] line
+        } else {
+            flushpend(); add(line)
+            if (k == "hostname" && ns > 0 && hn[ns] == "") hn[ns] = $2
+        }
+    }
+    END {
+        flushpend()
+        if (pre ~ /[^ \t\n]/) printf "-\t%06d\t%s\n", 0, enc(pre)
+        for (i = 1; i <= ns; i++)
+            printf "%s%s\t%06d\t%s\n", (hn[i] != "" ? "0" : "1"), tolower(hn[i]), i, enc(body[i])
+    }
+    ' "$CONFIG" | LC_ALL=C sort -t $'\t' -k1,1 -k2,2 | awk '
+    NR > 1 { print "" }
+    { s = $0; sub(/^[^\t]*\t[^\t]*\t/, "", s); gsub(/\001/, "\n", s); print s }
+    ' >"$tmp" || { rm -f "$tmp"; return 1; }
+    if [ ! -s "$tmp" ]; then rm -f "$tmp"; return 0; fi
+    cp -p "$CONFIG" "$CONFIG.bak" && cat "$tmp" >"$CONFIG"
+    rm -f "$tmp"
+}
+
 if [ "$EDIT" -eq 1 ]; then
     # shellcheck disable=SC2086  # editor may carry arguments, e.g. "code -w"
-    exec ${VISUAL:-${EDITOR:-vi}} "$CONFIG"
+    ${VISUAL:-${EDITOR:-vi}} "$CONFIG" || exit $?
+    if [ -r "$CONFIG" ]; then
+        sort_config || { echo "error: failed to sort $CONFIG" >&2; exit 1; }
+    fi
+    exit 0
 fi
 
 if [ ! -r "$CONFIG" ]; then
